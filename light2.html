@@ -1,0 +1,262 @@
+<html>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<head>
+    <style>
+        input[type=radio] {
+            border: 0px;
+            width: 10%;
+            height: 2em;
+            vertical-align: middle;
+        }
+
+        .slidecontainer {
+            width: 95%;
+            /* Width of the outside container */
+        }
+
+        /* The slider itself */
+
+        .slider {
+            -webkit-appearance: none;
+            /* Override default CSS styles */
+            appearance: none;
+            width: 100%;
+            /* Full-width */
+            height: 25px;
+            /* Specified height */
+            background: #d2d3d0;
+            /* Grey background */
+            //outline: none; /* Remove outline */
+            opacity: 0.7;
+            /* Set transparency (for mouse-over effects on hover) */
+            -webkit-transition: .2s;
+            /* 0.2 seconds transition on hover */
+            transition: opacity .2s;
+        }
+
+        /* Mouse-over effects */
+
+        .slider:hover {
+            opacity: 1;
+            /* Fully shown on mouse-over */
+        }
+
+        /* The slider handle (use -webkit- (Chrome, Opera, Safari, Edge) and -moz- (Firefox) to override default look) */
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            /* Override default look */
+            appearance: none;
+            width: 25px;
+            /* Set a specific slider handle width */
+            height: 25px;
+            /* Slider handle height */
+            background: #04AA6D;
+            /* Green background */
+            cursor: pointer;
+            /* Cursor on hover */
+        }
+
+        .slider::-moz-range-thumb {
+            width: 25px;
+            /* Set a specific slider handle width */
+            height: 25px;
+            /* Slider handle height */
+            background: #04AA6D;
+            /* Green background */
+            cursor: pointer;
+            /* Cursor on hover */
+        }
+
+        }
+    </style>
+</head>
+
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/@jaames/iro@5"></script>
+    <script>
+        var colorPicker = new iro.ColorPicker("#picker", {
+            // Set the size of the color picker
+            width: 220,
+            // Set the initial color to pure red
+            color: "#f00"
+        });
+    </script>
+    <div id="picker"></div>
+    <br>
+    <div class="slidecontainer">
+        <h3>Brightness Value:
+            <span id="demo"></span>
+        </h3>
+        <input type="range" min="0" max="100" value="50" class="slider" id="myRange">
+    </div>
+    <div class="slidecontainer">
+        <h3>Time on:
+            <span id="theTime"></span>
+        </h3>
+        <input type="range" min="0" max="7200" value="600" class="slider" id="timeRange">
+    </div>
+    <h3>Effect: </h3>
+    <table>
+        <tr width="100%">
+            <td width=300>
+                <input type="radio" id="solid" name="efx" value="0" checked=true>
+                <label for="solid">Solid</label>
+                <br>
+                <input type="radio" id="Fire" name="efx" value="1">
+                <label for="fire">Fire</label>
+                <br>
+                <input type="radio" id="fx2" name="efx" value="2">
+                <label for="Rainbow">Rainbow</label>
+                <br>
+                <input type="radio" id="fx3" name="efx" value="3">
+                <label for="rainbowWithGlitter">rainbowWithGlitter</label>
+                <br>
+                <input type="radio" id="fx4" name="efx" value="4">
+                <label for="confetti">confetti</label>
+                <br>
+                <input type="radio" id="fx5" name="efx" value="5">
+                <label for="sinelon">sinelon</label>
+                <br>
+                <input type="radio" id="fx6" name="efx" value="6">
+                <label for="juggle">bpm</label>
+                <br>
+                <input type="radio" id="fx7" name="efx" value="7">
+                <label for="bpm">juggle</label>
+                <br>
+                <input type="radio" id="fx8" name="efx" value="8">
+                <label for="fader">fader</label>
+                <br>
+            </td>
+            <td width=300 valign="top">
+                <input type="radio" id="fx9" name="efx" value="9">
+                <label for="7200">Flares</label>
+                <br>
+                <input type="radio" id="fx10" name="efx" value="10">
+                <label for="candycane">candy cane</label>
+                <br>
+                <input type="radio" id="fx11" name="efx" value="11">
+                <label for="candycane3">candy cane wrg</label>
+                <br>
+                <input type="radio" id="fx12" name="efx" value="12">
+                <label for="delayFader">Delay Fader</label>
+                <br>
+                <input type="radio" id="fx13" name="efx" value="13">
+                <label for="brightStep">Bright Step</label>
+                <br>
+                <input type="radio" id="fx14" name="efx" value="14">
+                <label for="candycane3">awesome1</label>
+                <br>
+                <input type="radio" id="fx15" name="efx" value="15">
+                <label for="delayFader">Awesome2</label>
+                <br>
+                <input type="radio" id="fx16" name="efx" value="16">
+                <label for="brightStep">Awesome3</label>
+                <br>
+            </td>
+            <!--
+<td width=300><div><p>Time for on:</p><input type="radio" id="t0" name="onTime" value="0"><label for="0">0</label><br><input type="radio" id="t10" name="onTime" value="10"><label for="10">10</label><br><input type="radio" id="t60" name="onTime" value="60" checked=true><label for="60">60</label><br><input type="radio" id="t300" name="onTime" value="300"><label for="300">300</label><br><input type="radio" id="t600" name="onTime" value="600"><label for="600">600</label><br><input type="radio" id="t1000" name="onTime" value="1000"><label for="100">1000</label><br><input type="radio" id="t3600" name="onTime" value="3600"><label for="3600">3600</label><br><input type="radio" id="t37200" name="onTime" value="7200"><label for="7200">7200</label><br></div></td><td width=300><div><p>Sleep off time:</p><input type="radio" id="toff0" name="offTime" value="0" checked=true><label for="10">0</label><br><input type="radio" id="toff10" name="offTime" value="10" ><label for="60">10</label><br><input type="radio" id="toff300" name="offTime" value="300"><label for="300">300</label><br><input type="radio" id="toff600" name="offTime" value="600"><label for="600">600</label><br><input type="radio" id="toff1000" name="offTime" value="1000"><label for="100">1000</label><br><input type="radio" id="toff3600" name="offTime" value="3600"><label for="3600">3600</label><br><input type="radio" id="toff37200" name="offTime" value="7200"><label for="7200">7200</label><br></div></td>
+-->
+        </tr>
+    </table>
+    <div class="slidecontainer">
+        <h3>Effect Speed:
+            <span id="fxSpeedLabel"></span>
+        </h3>
+        <input type="range" min="1" max="100" value="50" class="slider" id="fxSpeed">
+    </div>
+    <h5> Sumbittity do dah</h5>
+    <input type="submit" value="Set Lights" onclick="submit()" style="height:50px; width:150px" id="submitButton">
+    <script type="text/javascript">
+        var slider = document.getElementById("myRange");
+        var output = document.getElementById("demo");
+
+        var timeOn = document.getElementById("timeRange");
+        var tOut = document.getElementById("theTime");
+
+        var lightSpeed = document.getElementById("fxSpeed");
+        var lsOut = document.getElementById("fxSpeedLabel");
+
+
+        output.innerHTML = slider.value; // Display the default slider value
+        tOut.innerHTML = timeOn.value; // Display the default slider value
+        lsOut.innerHTML = lightSpeed.value; // Display the default slider value
+
+        // Update the current slider value (each time you drag the slider handle)
+        slider.oninput = function () {
+            output.innerHTML = this.value;
+        }
+        timeOn.oninput = function () {
+            tOut.innerHTML = this.value;
+        }
+        lightSpeed.oninput = function () {
+            lsOut.innerHTML = this.value;
+        }
+
+
+        function submit() {
+            var xhr = new XMLHttpRequest();
+            var col1 = colorPicker.color.hexString; //document.getElementById("colHexNameB").value;
+            var myUrl = 'https://api.thingspeak.com/update?api_key=Y0A92ZT5UMPKK3N1&field1=';
+            var bright = document.getElementById("myRange").value;
+            var lightSpeed = document.getElementById("fxSpeed").value;
+            var myCols = colorPicker.color.rgb;
+            var myColsHex = colorPicker.color.hexString;
+            var effectNum;
+            var myButton = document.getElementById("submitButton");
+
+            var fxRadios = document.getElementsByName("efx");
+            for (i = 0; i < fxRadios.length; i++) {
+                if (fxRadios[i].checked)
+                    effectNum = +fxRadios[i].value;
+            }
+            var lightTime = timeOn.value;
+
+            myButton.style.backgroundColor = myColsHex; //'Red';
+			myButton.style.borderWidth= effectNum.toString() + "px";
+            //var timeRadios=	document.getElementsByName("onTime");	
+            //          for(i = 0; i < timeRadios.length; i++) {
+            //       if(timeRadios[i].checked)
+            //      lightTime = +timeRadios[i].value;
+            //   }
+            var sleepTime=0;
+            //var sleepRadios = document.getElementsByName("offTime");
+           // for (i = 0; i < sleepRadios.length; i++) {
+            //    if (sleepRadios[i].checked)
+           //         sleepTime = +sleepRadios[i].value;
+        //    }
+
+            myUrl += bright + "&field2=" + myCols.r + "&field3=" + myCols.g + "&field4=" + myCols.b + "&field5=" + effectNum + "&field6=" + lightTime + "&field7=" + sleepTime + "&field8=" + lightSpeed;
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState === 4) {
+                    //alert(xhr.response);
+                }
+            }
+
+            xhr.open('get', myUrl, true);
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+            xhr.send();
+            updateMessage();
+
+        }
+
+        function updateMessage() {
+            //var refreshMessage = document.getElementById("refreshNotification");
+            var myButton = document.getElementById("submitButton");
+            //refreshMessage.innerHTML = "UPDATING";
+            // refreshMessage.style.color = "red";
+            myButton.style.backgroundColor = 'White';
+
+            setTimeout(function () {
+                updateRefresh();
+            }, 500);
+        }
+
+        function updateRefresh() {
+            var myButton = document.getElementById("submitButton");
+            var myColsHex = colorPicker.color.hexString;
+            myButton.style.backgroundColor = myColsHex;
+        }
+    </script>
+</body>
