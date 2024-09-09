@@ -19,6 +19,7 @@ esp_now_peer_info_t myFriend;
 #define MYRECIEVER MYRANK + 1
 #define LEDPin 2
 #define TIMEOUT 15000
+#define BATTERY_PIN 35
 
 #define MORNING 6
 #define NIGHT 18
@@ -478,7 +479,7 @@ void pingConnection() {
     connectWiFi();
   }
 
-  ThingSpeak.setField(3, 1);
+  ThingSpeak.setField(3, analogRead(BATTERY_PIN) );
   ThingSpeak.setField(2, POWERON);
   ThingSpeak.setField(7, getStrength(3));
   ThingSpeak.setStatus("TestPing");
@@ -733,7 +734,7 @@ void loop() {
     //turn power on?
 
     checkBatteryFlag = true;
-    Serial.println("Beepo " + String(checkBatteryFlag));
+    //Serial.println("Beepo " + String(checkBatteryFlag));
     deviceNum++;
     if (deviceNum > 10) {
       deviceNum = 1;
