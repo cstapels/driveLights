@@ -2,7 +2,7 @@
 #include <WiFi.h>
 #include <esp_wifi.h>  // only for esp_wifi_set_channel()
 #include <FastLED.h>
-#include "effects.h"
+//#include "effects.h"
 
 // Global copy of friends
 esp_now_peer_info_t myFriend;
@@ -13,7 +13,7 @@ esp_now_peer_info_t mySendFriend;
 #define PRINTSCANRESULTS 0
 #define DELETEBEFOREPAIR 0
 
-#define MYRANK 7                                                     
+#define MYRANK 4                                                     
 #define MYSENDER MYRANK - 1
 #define MYRECIEVER MYRANK + 1
 #define LEDPin 2
@@ -329,7 +329,10 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 }
 
 // callback when data is recv from Master
-void OnDataRecv(const uint8_t *mac_addr, const uint8_t *recData, int data_len) {
+//void OnDataRecv(const uint8_t *mac_addr, const uint8_t *recData, int data_len) {
+void OnDataRecv(const esp_now_recv_info_t *recv_info, const uint8_t *recData, int data_len) {
+  uint8_t *mac_addr = recv_info->src_addr;
+  uint8_t *des_addr = recv_info->des_addr;
   char macStr[18];
   snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
            mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
@@ -523,3 +526,130 @@ void loop() {
   // wait for 1seconds to run the logic again
   delay(10);
 }
+
+void doLights(){
+ if (myData.pattern == 0) {
+            //fill_solid(leds, NUM_LEDS, CRGB(myData.color3, myData.color1, myData.color2));
+      fill_solid(leds, NUM_LEDS, CRGB(myData.color1, myData.color2, myData.color3));
+      FastLED.show();
+    }
+    //myData.color3,myData.color1,myData.color2  //maybe for three pin
+    //myData.color2,myData.color3,myData.color1  red blue   green red    blue grrren
+    //myData.color1,myData.color2,myData.color3
+    if (myData.pattern == 1) {
+      Fire2012();  // run simulation frame
+
+      FastLED.show();  // display this frame
+      FastLED.delay(1000 / myData.lightSpeed);
+    }
+
+    if (myData.pattern == 2) {
+      rainbow();
+      gHue++;
+       FastLED.show();  // display this frame
+      FastLED.delay(1000 / myData.lightSpeed);
+    }
+
+    if (myData.pattern == 3) {
+      rainbow();
+      addGlitter(80);
+
+        gHue++;
+      
+      FastLED.show();  // display this frame
+      FastLED.delay(1000 / myData.lightSpeed);
+    }
+
+    if (myData.pattern == 4) {
+      confetti();  // run simulation frame
+
+      FastLED.show();  // display this frame
+      FastLED.delay(1000 / myData.lightSpeed);
+    }
+
+    if (myData.pattern == 5) {
+      sinelon();  // run simulation frame
+
+      FastLED.show();  // display this frame
+      FastLED.delay(1000 / myData.lightSpeed);
+    }
+
+    if (myData.pattern == 6) {
+      bpm();  // run simulation frame
+
+      FastLED.show();  // display this frame
+      FastLED.delay(1000 / myData.lightSpeed);
+    }
+
+    if (myData.pattern == 7) {
+      juggle();  // run simulation frame
+
+      FastLED.show();  // display this frame
+      FastLED.delay(1000 / myData.lightSpeed);
+    }
+
+    if (myData.pattern == 8) {
+      step++;
+      RGBLoop(step);  // run simulation frame
+
+      FastLED.show();  // display this frame
+      FastLED.delay(100 / myData.lightSpeed);
+      if (step > 1535) { step = 0; }
+    }
+
+    // if (myData.pattern==9){
+    //   step++;
+    //  // send up flare
+    //   flare();
+    //   // explode
+    //   explodeLoop();
+
+    //   FastLED.show(); // display this frame
+    //   FastLED.delay(100 / myData.lightSpeed);
+    //   if (step>1535){step=0;}
+
+    // wait before sending up another
+    // delay(random16(1000, 4000));
+    //}
+    if (myData.pattern == 10) {
+  
+      candyCane(2); // run simulation frame
+
+      FastLED.show();  // display this frame
+      FastLED.delay(3000 / myData.lightSpeed);
+
+    }
+        if (myData.pattern == 11) {
+  
+      candyCane(3); // run simulation frame
+
+      FastLED.show();  // display this frame
+      FastLED.delay(3000 / myData.lightSpeed);
+
+    }
+    //fader delayed by each device
+    if (myData.pattern == 12) {
+      step++;
+      RGBLoop(step);  // run simulation frame
+
+      FastLED.show();  // display this frame
+      FastLED.delay(50 / myData.lightSpeed+5*MYRANK);
+      if (step > 1535) { step = 0; }
+    }    
+
+    //brightness stepper
+
+
+    if (myData.pattern == 13) {
+      step=step+myDirection;
+         FastLED.setBrightness(step);
+      fill_solid(leds, NUM_LEDS, CRGB(myData.color1, myData.color2, myData.color3));
+      FastLED.show();
+      if (step > 254) { myDirection = -1; }
+        if (step < 2) { myDirection = 1; }
+           FastLED.delay(3000 / myData.lightSpeed);
+    }    
+
+    //brightness stepper
+}
+
