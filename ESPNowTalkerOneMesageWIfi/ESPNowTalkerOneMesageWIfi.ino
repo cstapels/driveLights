@@ -11,7 +11,7 @@ esp_now_peer_info_t myFriend;
 #define prod
 //#define demo
 #define CHANNEL 1
-#define PRINTSCANRESULTS 0
+#define PRINTSCANRESULTS 1
 #define DELETEBEFOREPAIR 0
 #define MAX_SEND_TRIES 10
 #define MYRANK 1
@@ -328,16 +328,18 @@ void OnDataRecv(const esp_now_recv_info_t *recv_info, const uint8_t *recData, in
 }
 
 void connectWiFi() {
+
+
   WiFi.begin(ssid, password);
   long startTime = millis();
-  long waitTime = 5000;
+  long waitTime = 15000;
   while ((WiFi.status() != WL_CONNECTED) && (startTime - millis() < waitTime)) {
-
-    blinkX(2, 550);
+delay(1000);
+   // blinkX(2, 950);
     Serial.println("Connecting to WiFi");
   }
   Serial.println("Connected");
-  //blinkX(5, 75);
+  blinkX(4, 375);
   ThingSpeak.begin(client);
 }
 
@@ -406,6 +408,7 @@ void setup() {
   connectWiFi();
   Serial.println(readTSPTime());
   adjustDayTime();
+  pingConnection();
 }
 
 void startESPNow() {
@@ -478,9 +481,10 @@ void pingConnection() {
   if ((WiFi.status() != WL_CONNECTED)) {
     connectWiFi();
   }
-
-  ThingSpeak.setField(3, analogRead(BATTERY_PIN) );
   ThingSpeak.setField(2, POWERON);
+  ThingSpeak.setField(3, 1);
+  ThingSpeak.setField(4, analogRead(BATTERY_PIN));
+
   ThingSpeak.setField(7, getStrength(3));
   ThingSpeak.setStatus("TestPing");
   int statusCode = 0;
@@ -548,18 +552,18 @@ String getResponse() {
 void readFromTSP() {
   int statusCode = 0;
   statusCode = ThingSpeak.readMultipleFields(readChannelId, readAPIKey);
-  //Serial.println("Code: " + String(statusCode));
+  Serial.println("Code: " + String(statusCode));
   if (statusCode == 200) {
     String createdAt = ThingSpeak.getCreatedAt();  // Created-at timestamp
     Serial.println("Created at " + createdAt);
     // Serial.println("sleep on "+ String(sleepOn) + " SleepStart " + String(sleepStart) + "millis " + String(millis())  + " Set Time " + String(theSetTime) + " myData.time " + String(myData.time));
 
-    //blinkX(1, 145);
+
     if (createdChange != createdAt) {
       createdChange = createdAt;
       lastTime = getCall().toInt();  //risky conversion here
       Serial.println("last read age " + String(lastTime));
-
+      blinkX(2, 145);
       if (lastTime < 10) {
         myData.bright = ThingSpeak.getFieldAsInt(1);
         myData.color1 = ThingSpeak.getFieldAsInt(2);
@@ -644,6 +648,9 @@ void loop() {
     lastTSPTime = millis();
     readFromTSP();  //get the latest control info
     Serial.println("Sleep on " + String(sleepOn));
+    if(POWERON){
+      blinkX(1,150);
+    }
   }
 
   if (myData.color1 == 333) {  //should write a process special commands function here for a range of entries for control
@@ -683,11 +690,14 @@ void loop() {
   //make sure its not asleep
   if ((checkBatteryFlag) && (!sleepOn)) {
     checkBatteryFlag = false;
-    flipPower();
-    delay(1500);
+
     if (deviceNum == 1) {
       pingConnection();
     } else {
+
+      flipPower();
+      pingConnection();
+      delay(1500);
       measureDevice(deviceNum);
     }
 

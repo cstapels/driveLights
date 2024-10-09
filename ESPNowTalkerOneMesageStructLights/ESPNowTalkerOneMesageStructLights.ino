@@ -10,14 +10,14 @@ esp_now_peer_info_t mySendFriend;
 #define prod
 //#define demo
 #define CHANNEL 1
-#define PRINTSCANRESULTS 0
+#define PRINTSCANRESULTS 1
 #define DELETEBEFOREPAIR 0
 
-#define MYRANK 4                                                     
+#define MYRANK 2                                                     
 #define MYSENDER MYRANK - 1
 #define MYRECIEVER MYRANK + 1
 #define LEDPin 2
-#define POWER_PIN 27 //change for 3
+#define POWER_PIN 27 //change to 26  for 3, and 27 for all the rest
 #define BATTERY_PIN 35
 #define NUM_LEDS 150
 #define DATA_PIN 4
@@ -46,6 +46,7 @@ RTC_DATA_ATTR int sleepTime = 0;
 int friendTries = 0;
 int powerOn = 0;
 int step = 0;
+int phasedStep=MYRANK*20;
 int myDirection = 1;
 int deliverySuccess = 0;
 int32_t sendStrength = 0;
@@ -74,7 +75,7 @@ typedef struct {              // Define a structure for the gravs.
 } gravs;
 gravs mygravs[numgravs];
 
-
+CRGBPalette16 myPalette;
 
 CRGB leds[NUM_LEDS];
 
@@ -90,6 +91,7 @@ typedef struct struct_message {
 } struct_message;
 
 struct_message myData;
+
 
 
 bool friendFound = 0;
@@ -109,7 +111,7 @@ void InitESPNow() {
 }
 
 void setUpLights() {
-  if (MYRANK == 4) {
+  if (MYRANK == 5) {
     FastLED.addLeds<WS2812B, DATA_PIN, BRG>(leds, NUM_LEDS);  //3 pin
   } else {
     FastLED.addLeds<WS2812B, DATA_PIN>(leds, NUM_LEDS);  //four pin
@@ -374,6 +376,7 @@ void setup() {
   esp_now_register_send_cb(OnDataSent);
   esp_now_register_recv_cb(OnDataRecv);
   myData.sleepTime = 0; //just in case
+   myPalette = RainbowStripesColors_p; //for the moving rainbow, function 15
 }
 
 void processMessage() {
@@ -650,6 +653,25 @@ void doLights(){
            FastLED.delay(3000 / myData.lightSpeed);
     }    
 
-    //brightness stepper
+    //phased light up
+        if (myData.pattern == 14) {
+         
+      phasedStep=phasedStep+myDirection*5;
+         FastLED.setBrightness(phasedStep);
+      fill_solid(leds, NUM_LEDS, CRGB(myData.color1, myData.color2, myData.color3));
+      FastLED.show();
+      if (phasedStep > 234) { myDirection = -1; }
+        if (phasedStep < 2) { myDirection = 1; }
+           FastLED.delay(2000 / myData.lightSpeed);
+    }   
+        //moving rainbow
+        if (myData.pattern == 15) {
+          phasedStep++;
+          if (phasedStep>255){
+            phasedStep=0;
+          }
+        fill_solid(leds, NUM_LEDS, ColorFromPalette(myPalette, phasedStep));
+         FastLED.delay(3000 / myData.lightSpeed);
+    }   
 }
 

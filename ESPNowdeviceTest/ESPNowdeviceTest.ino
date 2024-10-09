@@ -13,7 +13,7 @@ esp_now_peer_info_t mySendFriend;
 #define PRINTSCANRESULTS 0
 #define DELETEBEFOREPAIR 0
 
-#define MYRANK 4                                                     
+#define MYRANK 2                                                    
 #define MYSENDER MYRANK - 1
 #define MYRECIEVER MYRANK + 1
 #define LEDPin 2
