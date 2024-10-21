@@ -13,7 +13,7 @@ esp_now_peer_info_t mySendFriend;
 #define PRINTSCANRESULTS 1
 #define DELETEBEFOREPAIR 0
 
-#define MYRANK 2                                                     
+#define MYRANK 5                                                     
 #define MYSENDER MYRANK - 1
 #define MYRECIEVER MYRANK + 1
 #define LEDPin 2
@@ -111,7 +111,7 @@ void InitESPNow() {
 }
 
 void setUpLights() {
-  if (MYRANK == 5) {
+  if (MYRANK == 50) {
     FastLED.addLeds<WS2812B, DATA_PIN, BRG>(leds, NUM_LEDS);  //3 pin
   } else {
     FastLED.addLeds<WS2812B, DATA_PIN>(leds, NUM_LEDS);  //four pin

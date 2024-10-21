@@ -65,7 +65,7 @@ long timeReadChannelId = 444067;
 const char *timeReadAPIKey = "NBU9ULD2EJ1ELM9T";  //time control channel
 int lastTime = 0;
 bool POWERON = 0;
-long measureBatteryTime = 1000;  //10000;
+long measureBatteryTime = 9000;  //10000;
 
 typedef struct struct_message {
   int bright;
@@ -334,12 +334,12 @@ void connectWiFi() {
   long startTime = millis();
   long waitTime = 15000;
   while ((WiFi.status() != WL_CONNECTED) && (startTime - millis() < waitTime)) {
-delay(1000);
+delay(3000);
    // blinkX(2, 950);
     Serial.println("Connecting to WiFi");
   }
   Serial.println("Connected");
-  blinkX(4, 375);
+  blinkX(3, 675);
   ThingSpeak.begin(client);
 }
 
@@ -407,7 +407,7 @@ void setup() {
   configDeviceAP();
   connectWiFi();
   Serial.println(readTSPTime());
-  adjustDayTime();
+  //adjustDayTime();
   pingConnection();
 }
 
@@ -563,7 +563,7 @@ void readFromTSP() {
       createdChange = createdAt;
       lastTime = getCall().toInt();  //risky conversion here
       Serial.println("last read age " + String(lastTime));
-      blinkX(2, 145);
+      blinkX(2, 345);
       if (lastTime < 10) {
         myData.bright = ThingSpeak.getFieldAsInt(1);
         myData.color1 = ThingSpeak.getFieldAsInt(2);
@@ -649,7 +649,7 @@ void loop() {
     readFromTSP();  //get the latest control info
     Serial.println("Sleep on " + String(sleepOn));
     if(POWERON){
-      blinkX(1,150);
+      blinkX(1,350);
     }
   }
 
@@ -750,6 +750,6 @@ void loop() {
       deviceNum = 1;
     }
     Serial.println(readTSPTime());
-    adjustDayTime();
+    //adjustDayTime();
   }
 }
