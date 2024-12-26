@@ -478,6 +478,7 @@ void processMessage() {
 }
 
 void pingConnection() {
+
   if ((WiFi.status() != WL_CONNECTED)) {
     connectWiFi();
   }

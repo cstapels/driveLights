@@ -485,7 +485,16 @@ messageReady=1;
   }
 
   // wait for 1seconds to run the logic again
-  delay(10);
+  delay(3000);
+
+ digitalWrite(POWER_PIN, LOW);
+ digitalWrite(LEDPin, LOW);
+
+ delay(3000);
+  digitalWrite(POWER_PIN, HIGH);
+    digitalWrite(LEDPin, HIGH);
+  delay(1000);
+  
 }
 
 void doLights(){
