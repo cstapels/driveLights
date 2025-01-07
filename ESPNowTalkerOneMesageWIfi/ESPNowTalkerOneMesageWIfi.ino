@@ -553,7 +553,7 @@ String getResponse() {
 void readFromTSP() {
   int statusCode = 0;
   statusCode = ThingSpeak.readMultipleFields(readChannelId, readAPIKey);
-  Serial.println("Code: " + String(statusCode));
+ // Serial.println("Code: " + String(statusCode));
   if (statusCode == 200) {
     String createdAt = ThingSpeak.getCreatedAt();  // Created-at timestamp
     Serial.println("Created at " + createdAt);
@@ -648,7 +648,7 @@ void loop() {
     if ((WiFi.status() != WL_CONNECTED)) { connectWiFi(); }
     lastTSPTime = millis();
     readFromTSP();  //get the latest control info
-    Serial.println("Sleep on " + String(sleepOn));
+    //Serial.println("Sleep on " + String(sleepOn));
     if(POWERON){
       blinkX(1,350);
     }
@@ -665,6 +665,13 @@ void loop() {
     myData.color1 = 0;
     myData.pattern = 0;
     checkBatteryFlag = false;  //dont check battery while light command is being sent?
+  }
+    if (myData.color1 == 445) {  //check battery in device x  color is 445 and pattern is the device number
+   deviceNum=myData.pattern;
+    myData.color1 = 0;
+    myData.pattern = 0;
+    checkBatteryFlag = true;  
+    Serial.println("read device n");
   }
 
   if ((myData.color1 + myData.color2 + myData.color3 > 0) && (!sleepOn)) {
@@ -700,9 +707,10 @@ void loop() {
       pingConnection();
       delay(1500);
       measureDevice(deviceNum);
-    }
+    
 
     chainSendThenWait(1);
+    }
     Serial.println("Sent to device " + String(deviceNum));
     theSetTime = millis();  //effect start time
   }
@@ -743,14 +751,19 @@ void loop() {
   if ((millis() - timeTimer) > measureBatteryTime * 1000) {
     timeTimer = millis();
     //turn power on?
-
+    deviceNum=1;
     checkBatteryFlag = true;
     //Serial.println("Beepo " + String(checkBatteryFlag));
-    deviceNum++;
-    if (deviceNum > 10) {
-      deviceNum = 1;
-    }
+    // deviceNum++;
+    // if (deviceNum > 10) {
+    //   deviceNum = 1;
+    // }
     Serial.println(readTSPTime());
     //adjustDayTime();
   }
 }
+
+
+
+///commands
+//  https://api.thingspeak.com/update?api_key=Y0A92ZT5UMPKK3N1&field1=0&field2=445&field3=0&field4=0&field5=1
