@@ -329,7 +329,6 @@ void OnDataRecv(const esp_now_recv_info_t *recv_info, const uint8_t *recData, in
 
 void connectWiFi() {
 
-
   WiFi.begin(ssid, password);
   long startTime = millis();
   long waitTime = 15000;
@@ -403,7 +402,7 @@ void setup() {
   Serial.begin(115200);
   //Set device in STA mode to begin with
   WiFi.mode(WIFI_AP_STA);
-
+digitalWrite(POWER_SWITCH, LOW); //trun power off
   configDeviceAP();
   connectWiFi();
   Serial.println(readTSPTime());
