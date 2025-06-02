@@ -465,6 +465,9 @@ void loop() {
   // }
   if (millis()-lastTime>goTime){
     lastTime=millis();
+    pattern++;
+    if (pattern>8) {pattern=0;}
+
 myData.bright=200;
 myData.color1=200;
 myData.color2=100;

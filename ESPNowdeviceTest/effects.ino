@@ -15,6 +15,7 @@ extern uint8_t gHue;
 6  juggle, 
 7  bpm
 8 RGBLoop
+
 */
 
 void Fire2012() {
