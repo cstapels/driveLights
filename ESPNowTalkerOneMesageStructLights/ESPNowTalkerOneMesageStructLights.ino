@@ -13,7 +13,7 @@ esp_now_peer_info_t mySendFriend;
 #define PRINTSCANRESULTS 1
 #define DELETEBEFOREPAIR 0
 
-#define MYRANK 5                                                     
+#define MYRANK 4                                                     
 #define MYSENDER MYRANK - 1
 #define MYRECIEVER MYRANK + 1
 #define LEDPin 2
@@ -131,15 +131,12 @@ void setUpLights() {
 
 // config AP SSID
 void configDeviceAP() {
-  char SSID[10];
   String SSIDString = "Friend_" + String(MYRANK);
-  strcpy(SSID, SSIDString.c_str());
-  //const char *SSID = "Friend_1";
-  bool result = WiFi.softAP(SSID, "Friend_1_Password", CHANNEL, 0);
+  bool result = WiFi.softAP(SSIDString.c_str(), "Friend_1_Password", CHANNEL, 0);
   if (!result) {
     Serial.println("AP Config failed.");
   } else {
-    Serial.println("AP Config Success. Broadcasting with AP: " + String(SSID));
+    Serial.println("AP Config Success. Broadcasting with AP: " + SSIDString);
     Serial.print("AP CHANNEL ");
     Serial.println(WiFi.channel());
   }
@@ -318,17 +315,31 @@ void sendData(const uint8_t *peer_addr) {  //zero for out, 1 for in
   deliverySuccess = 0;
 }
 
-// callback when data is sent from Master to friend
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+void OnDataSent(const esp_now_send_info_t *info, esp_now_send_status_t status) {
   char macStr[18];
-  snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
-           mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+  snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+           info->des_addr[0], info->des_addr[1], info->des_addr[2],
+           info->des_addr[3], info->des_addr[4], info->des_addr[5]);
+
   Serial.print("Last Packet Sent to: ");
   Serial.println(macStr);
+
   Serial.print("Last Packet Send Status: ");
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
-  //status == ESP_NOW_SEND_SUCCESS ? deliverySuccess = 1 : deliverySuccess = 0;
 }
+
+
+// callback when data is sent from Master to friend
+// void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+//   char macStr[18];
+//   snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
+//            mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+//   Serial.print("Last Packet Sent to: ");
+//   Serial.println(macStr);
+//   Serial.print("Last Packet Send Status: ");
+//   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+//   //status == ESP_NOW_SEND_SUCCESS ? deliverySuccess = 1 : deliverySuccess = 0;
+// }
 
 // callback when data is recv from Master
 //void OnDataRecv(const uint8_t *mac_addr, const uint8_t *recData, int data_len) {
@@ -360,23 +371,23 @@ void startSleep() {
 
 
 void setup() {
-  pinMode(LEDPin, OUTPUT);
-  pinMode(POWER_PIN, OUTPUT);
-  digitalWrite(POWER_PIN, LOW);  //make sure its off
+ pinMode(LEDPin, OUTPUT);
+ pinMode(POWER_PIN, OUTPUT);
+ digitalWrite(POWER_PIN, LOW);  //make sure its off
   blinkX(MYRANK, 50);
   setUpLights();
   Serial.begin(115200);
-  WiFi.mode(WIFI_STA);  //Set device in STA mode to begin with
-  configDeviceAP();
-  esp_wifi_set_channel(CHANNEL, WIFI_SECOND_CHAN_NONE);
+  WiFi.mode(WIFI_AP);  //Set device in STA mode to begin with
+ configDeviceAP();
+ esp_wifi_set_channel(CHANNEL, WIFI_SECOND_CHAN_NONE);
 
-  Serial.print("STA MAC: " + WiFi.macAddress());  // This is the mac address of the Master in Station Mode
-  Serial.print("STA CHANNEL " + WiFi.channel());
-  InitESPNow();  // Init ESPNow with a fallback logic
-  esp_now_register_send_cb(OnDataSent);
+ Serial.print("STA MAC: " + WiFi.macAddress());  // This is the mac address of the Master in Station Mode
+ Serial.print("STA CHANNEL " + WiFi.channel());
+ InitESPNow();  // Init ESPNow with a fallback logic
+ esp_now_register_send_cb(OnDataSent);
   esp_now_register_recv_cb(OnDataRecv);
   myData.sleepTime = 0; //just in case
-   myPalette = RainbowStripesColors_p; //for the moving rainbow, function 15
+  myPalette = RainbowStripesColors_p; //for the moving rainbow, function 15
 }
 
 void processMessage() {
@@ -449,7 +460,8 @@ void blinkX(int numTimes, int delayTime) {
 }
 
 void loop() {
-
+// Serial.println("Boogh");
+// delay (1005);
   bool isPaired;
   bool isSendPaired;
   //things to do in the loop
