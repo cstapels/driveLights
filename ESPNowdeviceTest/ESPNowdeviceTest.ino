@@ -465,8 +465,8 @@ void loop() {
   // }
   if (millis()-lastTime>goTime){
     lastTime=millis();
-    pattern++;
-    if (pattern>8) {pattern=0;}
+    //pattern++;
+   // if (pattern>8) {pattern=0;}
 
 myData.bright=200;
 myData.color1=200;
@@ -492,10 +492,12 @@ messageReady=1;
 
  digitalWrite(POWER_PIN, LOW);
  digitalWrite(LEDPin, LOW);
+ Serial.println("low");
 
  delay(3000);
   digitalWrite(POWER_PIN, HIGH);
     digitalWrite(LEDPin, HIGH);
+     Serial.println("high");
   delay(1000);
   
 }
