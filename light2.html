@@ -198,7 +198,7 @@
         function submit() {
             var xhr = new XMLHttpRequest();
             var col1 = colorPicker.color.hexString; //document.getElementById("colHexNameB").value;
-            var myUrl = 'https://api.thingspeak.com/update?api_key=Y0A92ZT5UMPKK3N1&field1=';
+       var myUrl = 'https://api.thingspeak.com/update?api_key=Y0A92ZT5UMPKK3N1&field1=';
             var bright = document.getElementById("myRange").value;
             var lightSpeed = document.getElementById("fxSpeed").value;
             var myCols = colorPicker.color.rgb;
@@ -229,14 +229,14 @@
 
             myUrl += bright + "&field2=" + myCols.r + "&field3=" + myCols.g + "&field4=" + myCols.b + "&field5=" + effectNum + "&field6=" + lightTime + "&field7=" + sleepTime + "&field8=" + lightSpeed;
             xhr.onreadystatechange = function () {
-                if (xhr.readyState === 4) {
-                    //alert(xhr.response);
-                }
-            }
+    if (xhr.readyState === 4) {
+        console.log("Status:", xhr.status);
+        console.log("Response:", xhr.responseText);
+    }
+};
 
-            xhr.open('get', myUrl, true);
-            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-            xhr.send();
+xhr.open('GET', myUrl, true);
+xhr.send();
             updateMessage();
 
         }
