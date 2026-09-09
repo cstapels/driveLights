@@ -1,5 +1,8 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include <time.h>
+#include <sys/time.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -7,6 +10,7 @@
 
 #include "driver/gpio.h"
 #include "esp_adc/adc_oneshot.h"
+#include "led_strip.h"
 
 #include "esp_wifi.h"
 #include "esp_now.h"
@@ -33,7 +37,7 @@
 // Head device = 0
 // Other devices = 1, 2, 3, etc.
 //
-#define DEVICE_ID 0 
+#define DEVICE_ID 3 
 //1 is com9 swirly
 //4 device 2 on com 12
 //6? is device 3 on com11
@@ -45,6 +49,11 @@
 
 // LED
 #define LED_GPIO GPIO_NUM_2
+#define POWER_SWITCH_GPIO GPIO_NUM_26
+#define NEOPIXEL_NUM_LEDS 150
+#define NEOPIXEL_DATA_PIN GPIO_NUM_4
+#define NEOPIXEL_POWER_PIN GPIO_NUM_27
+#define STATUS_POWER_HOLD_MS 6000
 
 // Mesh
 #define DEFAULT_TTL 10
@@ -64,6 +73,8 @@
 // Discovery timing
 #define DISCOVERY_INTERVAL_MS 1000
 #define REMOTE_DISCOVERY_DURATION_MS 10000
+#define UPDATE_RETRY_INTERVAL_MS 2000
+#define MAX_UPDATE_RETRIES 3
 
 // ThingSpeak
 #define THINGSPEAK_CHANNEL_ID 2060365
@@ -79,6 +90,9 @@
 
 // How often HEAD checks ThingSpeak
 #define THINGSPEAK_CHECK_INTERVAL_MS 3500
+#define HEAD_STATUS_DELAY_MS 15000
+#define HEAD_STATUS_INTERVAL_MS 3600000
+#define MESH_SIGNAL_MAX_AGE_MS 30000
 
 
 // ============================================================
@@ -97,7 +111,9 @@ enum MessageType : uint8_t {
 
     MSG_STATUS_RESPONSE,
 
-    MSG_THINGSPEAK_UPDATE
+    MSG_THINGSPEAK_UPDATE,
+
+    MSG_UPDATE_ACK
 };
 
 
@@ -147,6 +163,10 @@ typedef struct {
     uint8_t command;
 
     uint16_t battery_mv;
+
+    int16_t mesh_rssi_dbm;
+
+    uint32_t ack_message_id;
 
     // ThingSpeak payload
     ThingSpeakData thingspeak;
@@ -330,6 +350,7 @@ ThingSpeakData current_settings = {};
 
 long last_thingspeak_entry = 0;
 bool thingspeak_entry_initialized = false;
+bool device_time_initialized = false;
 
 
 // ============================================================
@@ -346,13 +367,227 @@ typedef struct {
 
     uint8_t data[250];
 
+    int8_t rssi_dbm;
+
 } ReceivedPacket;
 
+typedef struct {
+    bool known;
+    int8_t rssi_dbm;
+    TickType_t last_seen;
+} NeighborSignal;
+
 QueueHandle_t rx_queue;
+QueueHandle_t status_queue;
+QueueHandle_t led_queue;
+volatile TickType_t power_off_at = 0;
+volatile TickType_t remote_power_off_at = 0;
+led_strip_handle_t neopixel_strip = nullptr;
+NeighborSignal neighbor_signals[MAX_DEVICES] = {};
+
+MeshMessage pending_update = {};
+volatile bool update_pending = false;
+volatile uint8_t update_ack_mask = 0;
+uint8_t update_expected_ack_mask = 0;
+TickType_t update_retry_at = 0;
+uint8_t update_retry_count = 0;
 
 void write_status_to_thingspeak(
     const MeshMessage *msg
 );
+
+void write_head_status_to_status_channel();
+
+esp_err_t status_http_event(
+    esp_http_client_event_t *evt
+)
+{
+    return ESP_OK;
+}
+
+void status_upload_task(
+    void *parameter
+)
+{
+    MeshMessage msg;
+
+    while (1) {
+        if (
+            xQueueReceive(
+                status_queue,
+                &msg,
+                portMAX_DELAY
+            ) == pdTRUE
+        ) {
+            write_status_to_thingspeak(&msg);
+        }
+    }
+}
+
+void queue_status_upload(
+    const MeshMessage *msg
+)
+{
+    if (
+        xQueueSend(
+            status_queue,
+            msg,
+            0
+        ) != pdTRUE
+    ) {
+        printf(
+            "Status upload queue full\n"
+        );
+    }
+}
+
+void hold_power_for_ms(
+    uint32_t duration_ms
+)
+{
+    TickType_t requested_off_at =
+        xTaskGetTickCount() + pdMS_TO_TICKS(duration_ms);
+
+    if (requested_off_at > power_off_at) {
+        power_off_at = requested_off_at;
+    }
+
+    gpio_set_level(POWER_SWITCH_GPIO, 1);
+}
+
+void power_switch_task(
+    void *parameter
+)
+{
+    while (1) {
+        TickType_t now = xTaskGetTickCount();
+
+        if (
+            power_off_at != 0 &&
+            (int32_t)(now - power_off_at) >= 0
+        ) {
+            gpio_set_level(POWER_SWITCH_GPIO, 0);
+            power_off_at = 0;
+        }
+
+        if (
+            remote_power_off_at != 0 &&
+            (int32_t)(now - remote_power_off_at) >= 0
+        ) {
+            gpio_set_level(NEOPIXEL_POWER_PIN, 0);
+            remote_power_off_at = 0;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+void hold_remote_power_for_ms(
+    uint32_t duration_ms
+)
+{
+    remote_power_off_at =
+        xTaskGetTickCount() + pdMS_TO_TICKS(duration_ms);
+
+    gpio_set_level(NEOPIXEL_POWER_PIN, 1);
+}
+
+void record_received_signal(
+    const uint8_t *mac,
+    const uint8_t *data,
+    int len,
+    int8_t rssi_dbm
+)
+{
+    int device_id = -1;
+
+    if (
+        len == sizeof(MeshMessage)
+    ) {
+        MeshMessage message = {};
+        memcpy(&message, data, sizeof(message));
+
+        if (
+            message.type == MSG_DISCOVER &&
+            message.source_id < NUM_DEVICES
+        ) {
+            device_id = message.source_id;
+        }
+    }
+
+    if (device_id < 0) {
+        for (int i = 0; i < NUM_DEVICES; i++) {
+            if (
+                known_devices[i].known &&
+                memcmp(known_devices[i].mac, mac, 6) == 0
+            ) {
+                device_id = i;
+                break;
+            }
+        }
+    }
+
+    if (
+        device_id >= 0 &&
+        device_id < NUM_DEVICES &&
+        device_id != DEVICE_ID
+    ) {
+        neighbor_signals[device_id].known = true;
+        neighbor_signals[device_id].rssi_dbm = rssi_dbm;
+        neighbor_signals[device_id].last_seen = xTaskGetTickCount();
+    }
+}
+
+int16_t strongest_recent_mesh_rssi()
+{
+    int16_t strongest = -127;
+    TickType_t now = xTaskGetTickCount();
+
+    for (int i = 0; i < NUM_DEVICES; i++) {
+        if (
+            neighbor_signals[i].known &&
+            (now - neighbor_signals[i].last_seen) <=
+                pdMS_TO_TICKS(MESH_SIGNAL_MAX_AGE_MS) &&
+            neighbor_signals[i].rssi_dbm > strongest
+        ) {
+            strongest = neighbor_signals[i].rssi_dbm;
+        }
+    }
+
+    return strongest;
+}
+
+void build_mesh_signal_summary(
+    char *buffer,
+    size_t buffer_size
+)
+{
+    size_t used = 0;
+    TickType_t now = xTaskGetTickCount();
+
+    used += snprintf(
+        buffer + used,
+        buffer_size - used,
+        "mesh"
+    );
+
+    for (int i = 0; i < NUM_DEVICES; i++) {
+        if (
+            neighbor_signals[i].known &&
+            (now - neighbor_signals[i].last_seen) <=
+                pdMS_TO_TICKS(MESH_SIGNAL_MAX_AGE_MS) &&
+            used < buffer_size
+        ) {
+            used += snprintf(
+                buffer + used,
+                buffer_size - used,
+                "_%d_%d",
+                i,
+                neighbor_signals[i].rssi_dbm
+            );
+        }
+    }
+}
 
 uint16_t read_battery_level()
 {
@@ -401,6 +636,106 @@ uint16_t read_battery_level()
     }
 
     return (uint16_t)raw_level;
+}
+
+void initialize_neopixels()
+{
+    led_strip_config_t strip_config = {};
+    strip_config.strip_gpio_num = NEOPIXEL_DATA_PIN;
+    strip_config.max_leds = NEOPIXEL_NUM_LEDS;
+    strip_config.led_model = LED_MODEL_WS2812;
+    strip_config.color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB;
+
+    led_strip_rmt_config_t rmt_config = {};
+    rmt_config.clk_src = RMT_CLK_SRC_DEFAULT;
+    rmt_config.resolution_hz = 10 * 1000 * 1000;
+    rmt_config.mem_block_symbols = 64;
+    rmt_config.flags.with_dma = false;
+
+    ESP_ERROR_CHECK(
+        led_strip_new_rmt_device(
+            &strip_config,
+            &rmt_config,
+            &neopixel_strip
+        )
+    );
+
+    ESP_ERROR_CHECK(
+        led_strip_clear(neopixel_strip)
+    );
+
+    gpio_set_level(NEOPIXEL_POWER_PIN, 0);
+}
+
+void update_neopixels(
+    const ThingSpeakData *data
+)
+{
+    if (data->brightness <= 1) {
+        ESP_ERROR_CHECK(
+            led_strip_clear(neopixel_strip)
+        );
+        gpio_set_level(NEOPIXEL_POWER_PIN, 0);
+        return;
+    }
+
+    gpio_set_level(NEOPIXEL_POWER_PIN, 1);
+
+    if (data->pattern != 0) {
+        printf(
+            "NeoPixel pattern %u is not implemented yet\n",
+            data->pattern
+        );
+        return;
+    }
+
+    uint8_t red = (data->color1 >> 11) & 0x1F;
+    uint8_t green = (data->color1 >> 5) & 0x3F;
+    uint8_t blue = data->color1 & 0x1F;
+
+    red = (uint8_t)((red * 255U / 31U) * data->brightness / 255U);
+    green = (uint8_t)((green * 255U / 63U) * data->brightness / 255U);
+    blue = (uint8_t)((blue * 255U / 31U) * data->brightness / 255U);
+
+    for (int i = 0; i < NEOPIXEL_NUM_LEDS; i++) {
+        ESP_ERROR_CHECK(
+            led_strip_set_pixel(
+                neopixel_strip,
+                i,
+                red,
+                green,
+                blue
+            )
+        );
+    }
+
+    ESP_ERROR_CHECK(
+        led_strip_refresh(neopixel_strip)
+    );
+}
+
+void send_update_ack(
+    uint32_t message_id
+);
+
+void led_update_task(
+    void *parameter
+)
+{
+    MeshMessage update;
+
+    while (1) {
+        if (
+            xQueueReceive(
+                led_queue,
+                &update,
+                portMAX_DELAY
+            ) == pdTRUE
+        ) {
+            update_neopixels(&update.thingspeak);
+            send_update_ack(update.message_id);
+        }
+    }
 }
 
 
@@ -707,6 +1042,23 @@ void send_broadcast(
     }
 }
 
+void send_update_ack(
+    uint32_t message_id
+)
+{
+    MeshMessage ack = {};
+
+    ack.session_id = session_id;
+    ack.message_id = next_message_id++;
+    ack.source_id = DEVICE_ID;
+    ack.target_id = HEAD_ID;
+    ack.type = MSG_UPDATE_ACK;
+    ack.ttl = DEFAULT_TTL;
+    ack.ack_message_id = message_id;
+
+    send_broadcast(&ack);
+}
+
 
 // ============================================================
 // SEND JOIN BEACON
@@ -977,8 +1329,71 @@ void send_thingspeak_update(
     );
 
 
-    // Broadcast first
-    send_broadcast(&msg);
+    pending_update = msg;
+    update_pending = true;
+    update_ack_mask = 0;
+    update_expected_ack_mask = 0;
+
+    for (int i = 0; i < NUM_DEVICES; i++) {
+        if (i != HEAD_ID && known_devices[i].known) {
+            update_expected_ack_mask |= (uint8_t)(1U << i);
+        }
+    }
+
+    update_retry_count = 1;
+    update_retry_at =
+        xTaskGetTickCount() +
+        pdMS_TO_TICKS(UPDATE_RETRY_INTERVAL_MS);
+
+    send_broadcast(&pending_update);
+}
+
+void update_retry_task(
+    void *parameter
+)
+{
+    while (1) {
+        if (
+            update_pending &&
+            update_expected_ack_mask != 0 &&
+            (update_ack_mask & update_expected_ack_mask) ==
+                update_expected_ack_mask
+        ) {
+            update_pending = false;
+            printf(
+                "All known devices acknowledged update %lu\n",
+                (unsigned long)pending_update.message_id
+            );
+        }
+
+        if (
+            update_pending &&
+            (int32_t)(xTaskGetTickCount() - update_retry_at) >= 0
+        ) {
+            if (update_retry_count >= MAX_UPDATE_RETRIES) {
+                printf(
+                    "Update %lu timed out after %d attempts\n",
+                    (unsigned long)pending_update.message_id,
+                    update_retry_count
+                );
+                update_pending = false;
+            } else {
+                printf(
+                    "Retrying update %lu (attempt %d)\n",
+                    (unsigned long)pending_update.message_id,
+                    update_retry_count + 1
+                );
+
+                send_broadcast(&pending_update);
+                update_retry_count++;
+                update_retry_at =
+                    xTaskGetTickCount() +
+                    pdMS_TO_TICKS(UPDATE_RETRY_INTERVAL_MS);
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 }
 
 
@@ -1026,6 +1441,7 @@ void send_status_response()
     msg.ttl = DEFAULT_TTL;
     msg.command = network_state;
     msg.battery_mv = read_battery_level();
+    msg.mesh_rssi_dbm = strongest_recent_mesh_rssi();
 
     remember_message(&msg);
 
@@ -1099,6 +1515,29 @@ void process_thingspeak_update(
         "***********************************\n\n"
     );
 
+
+    if (DEVICE_ID != HEAD_ID) {
+        if (current_settings.timeOn > 0) {
+            hold_remote_power_for_ms(
+                (uint32_t)current_settings.timeOn * 1000U
+            );
+        } else {
+            remote_power_off_at = 0;
+            gpio_set_level(NEOPIXEL_POWER_PIN, 0);
+        }
+
+        if (
+            xQueueSend(
+                led_queue,
+                msg,
+                0
+            ) != pdTRUE
+        ) {
+            printf(
+                "LED update queue full; update not acknowledged\n"
+            );
+        }
+    }
 
     // This is where the actual LED/device
     // behavior will eventually be updated.
@@ -1186,6 +1625,70 @@ void print_mesh_members()
 
 
 // ============================================================
+// PRINT MESH RSSI MAP
+// ============================================================
+
+void print_mesh_rssi_map()
+{
+    TickType_t now = xTaskGetTickCount();
+
+    printf(
+        "\nMesh RSSI map from Device %d:\n",
+        HEAD_ID
+    );
+
+    printf(
+        "  Device %d (HEAD)\n",
+        HEAD_ID
+    );
+
+    for (int i = 0; i < NUM_DEVICES; i++) {
+
+        if (i == HEAD_ID) {
+            continue;
+        }
+
+        if (!known_devices[i].known) {
+            printf(
+                "  Device %d: UNKNOWN\n",
+                i
+            );
+            continue;
+        }
+
+        if (!neighbor_signals[i].known) {
+            printf(
+                "  Device %d: NO RSSI DATA\n",
+                i
+            );
+            continue;
+        }
+
+        TickType_t age =
+            now - neighbor_signals[i].last_seen;
+
+        if (age > pdMS_TO_TICKS(MESH_SIGNAL_MAX_AGE_MS)) {
+            printf(
+                "  Device %d: STALE (age=%lu ms)\n",
+                i,
+                (unsigned long)pdTICKS_TO_MS(age)
+            );
+            continue;
+        }
+
+        printf(
+            "  Device %d: RSSI=%d dBm, age=%lu ms\n",
+            i,
+            neighbor_signals[i].rssi_dbm,
+            (unsigned long)pdTICKS_TO_MS(age)
+        );
+    }
+
+    printf("\n");
+}
+
+
+// ============================================================
 // RECEIVE CALLBACK
 // ============================================================
 //
@@ -1212,6 +1715,19 @@ void on_data_recv(
 
     ReceivedPacket packet = {};
 
+    int8_t rssi_dbm = -127;
+
+    if (recv_info->rx_ctrl != NULL) {
+        rssi_dbm = recv_info->rx_ctrl->rssi;
+    }
+
+    record_received_signal(
+        recv_info->src_addr,
+        data,
+        len,
+        rssi_dbm
+    );
+
     memcpy(
         packet.mac,
         recv_info->src_addr,
@@ -1219,6 +1735,7 @@ void on_data_recv(
     );
 
     packet.len = len;
+    packet.rssi_dbm = rssi_dbm;
 
     memcpy(
         packet.data,
@@ -1528,6 +2045,13 @@ void process_mesh_message(
 
     if (message_already_seen(msg)) {
 
+        if (
+            msg->type == MSG_THINGSPEAK_UPDATE &&
+            DEVICE_ID != HEAD_ID
+        ) {
+            send_update_ack(msg->message_id);
+        }
+
         printf(
             "Duplicate ignored: "
             "Source %d Message %lu\n",
@@ -1590,9 +2114,6 @@ void process_mesh_message(
     );
 
 
-    flash_led_twice();
-
-
     // --------------------------------------------------------
     // Process if this device is target
     // --------------------------------------------------------
@@ -1648,7 +2169,29 @@ void process_mesh_message(
                 );
 
                 if (DEVICE_ID == HEAD_ID) {
-                    write_status_to_thingspeak(msg);
+                    queue_status_upload(msg);
+                    print_mesh_rssi_map();
+                }
+
+                break;
+
+
+            case MSG_UPDATE_ACK:
+
+                if (
+                    DEVICE_ID == HEAD_ID &&
+                    update_pending &&
+                    msg->ack_message_id == pending_update.message_id &&
+                    msg->source_id < NUM_DEVICES
+                ) {
+                    update_ack_mask |=
+                        (uint8_t)(1U << msg->source_id);
+
+                    printf(
+                        "UPDATE ACK from Device %d for message %lu\n",
+                        msg->source_id,
+                        (unsigned long)msg->ack_message_id
+                    );
                 }
 
                 break;
@@ -2208,11 +2751,6 @@ void head_beacon_task(
 {
     while (1) {
 
-        printf(
-            "HEAD BEACON TASK: state=%d\n",
-            network_state
-        );
-
         if (
             DEVICE_ID == HEAD_ID
         ) {
@@ -2355,6 +2893,96 @@ esp_err_t thingspeak_http_event(
     return ESP_OK;
 }
 
+bool set_time_from_created_at(
+    const char *json
+)
+{
+    const char *key = strstr(json, "created_at");
+
+    if (!key) {
+        return false;
+    }
+
+    const char *value = strchr(key, ':');
+
+    if (!value) {
+        return false;
+    }
+
+    value++;
+
+    while (*value == ' ' || *value == '\t') {
+        value++;
+    }
+
+    if (*value != '\"' && *value != '\'') {
+        return false;
+    }
+
+    int year;
+    int month;
+    int day;
+    int hour;
+    int minute;
+    int second;
+    char sign;
+    int offset_hour;
+    int offset_minute;
+
+    if (
+        sscanf(
+            value + 1,
+            "%d-%d-%dT%d:%d:%d%c%d:%d",
+            &year,
+            &month,
+            &day,
+            &hour,
+            &minute,
+            &second,
+            &sign,
+            &offset_hour,
+            &offset_minute
+        ) != 9
+    ) {
+        return false;
+    }
+
+    struct tm utc_tm = {};
+    utc_tm.tm_year = year - 1900;
+    utc_tm.tm_mon = month - 1;
+    utc_tm.tm_mday = day;
+    utc_tm.tm_hour = hour;
+    utc_tm.tm_min = minute;
+    utc_tm.tm_sec = second;
+
+    time_t timestamp = timegm(&utc_tm);
+    int offset_seconds =
+        (offset_hour * 60 + offset_minute) * 60;
+
+    if (sign == '-') {
+        timestamp += offset_seconds;
+    } else if (sign == '+') {
+        timestamp -= offset_seconds;
+    } else {
+        return false;
+    }
+
+    struct timeval time_value = {};
+    time_value.tv_sec = timestamp;
+
+    if (settimeofday(&time_value, NULL) != 0) {
+        return false;
+    }
+
+    device_time_initialized = true;
+
+    printf(
+        "Device time synchronized from ThingSpeak created_at\n"
+    );
+
+    return true;
+}
+
 
 // ============================================================
 // WRITE STATUS TO THINGSPEAK
@@ -2365,28 +2993,36 @@ void write_status_to_thingspeak(
 )
 {
     char url[256];
+    char mesh_summary[96];
+
+    build_mesh_signal_summary(
+        mesh_summary,
+        sizeof(mesh_summary)
+    );
 
     snprintf(
         url,
         sizeof(url),
         "https://api.thingspeak.com/update?"
-        "api_key=%s&field%d=%d&field%d=%u&status="
-        "device_%u_state_%u_battery_raw_%u",
+        "api_key=%s&field%d=%d&field%d=%u&field5=%d&status="
+        "device_%u_state_%u_battery_raw_%u_%s",
         STATUS_THINGSPEAK_API_KEY,
         STATUS_THINGSPEAK_DEVICE_FIELD,
         msg->source_id,
         STATUS_THINGSPEAK_BATTERY_FIELD,
         msg->battery_mv,
+        msg->mesh_rssi_dbm,
         msg->source_id,
         msg->command,
-        msg->battery_mv
+        msg->battery_mv,
+        mesh_summary
     );
 
     esp_http_client_config_t config = {};
 
     config.url = url;
     config.method = HTTP_METHOD_GET;
-    config.event_handler = thingspeak_http_event;
+    config.event_handler = status_http_event;
     config.crt_bundle_attach = esp_crt_bundle_attach;
     config.timeout_ms = 10000;
 
@@ -2425,6 +3061,106 @@ void write_status_to_thingspeak(
     );
 
     esp_http_client_cleanup(client);
+}
+
+void write_head_status_to_status_channel()
+{
+    time_t now = time(NULL);
+    uint16_t battery = read_battery_level();
+    int wifi_rssi = -127;
+    wifi_ap_record_t ap_info = {};
+
+    if (
+        esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK
+    ) {
+        wifi_rssi = ap_info.rssi;
+    }
+
+    char mesh_summary[96];
+    build_mesh_signal_summary(
+        mesh_summary,
+        sizeof(mesh_summary)
+    );
+
+    char status_text[128];
+
+    snprintf(
+        status_text,
+        sizeof(status_text),
+        "head_state_%d_battery_raw_%u_epoch_%lld",
+        network_state,
+        battery,
+        (long long)now
+    );
+
+    char url[256];
+
+    snprintf(
+        url,
+        sizeof(url),
+        "https://api.thingspeak.com/update?"
+        "api_key=%s&field2=%d&field3=%d&field4=%u&field5=%d&status=%s",
+        STATUS_THINGSPEAK_API_KEY,
+        wifi_rssi,
+        HEAD_ID,
+        battery,
+        strongest_recent_mesh_rssi(),
+        status_text
+    );
+
+    esp_http_client_config_t config = {};
+    config.url = url;
+    config.method = HTTP_METHOD_GET;
+    config.event_handler = status_http_event;
+    config.crt_bundle_attach = esp_crt_bundle_attach;
+    config.timeout_ms = 10000;
+
+    esp_http_client_handle_t client =
+        esp_http_client_init(&config);
+
+    if (!client) {
+        printf(
+            "Could not initialize main channel status client\n"
+        );
+        return;
+    }
+
+    esp_err_t err =
+        esp_http_client_perform(client);
+
+    if (err != ESP_OK) {
+        printf(
+            "Main channel status HTTP error: %s\n",
+            esp_err_to_name(err)
+        );
+        esp_http_client_cleanup(client);
+        return;
+    }
+
+    printf(
+        "Head status written to status channel %d: %s\n",
+        STATUS_THINGSPEAK_CHANNEL_ID,
+        status_text
+    );
+
+    esp_http_client_cleanup(client);
+}
+
+void head_status_task(
+    void *parameter
+)
+{
+    vTaskDelay(
+        pdMS_TO_TICKS(HEAD_STATUS_DELAY_MS)
+    );
+
+    while (1) {
+        write_head_status_to_status_channel();
+
+        vTaskDelay(
+            pdMS_TO_TICKS(HEAD_STATUS_INTERVAL_MS)
+        );
+    }
 }
 
 
@@ -2551,12 +3287,6 @@ bool read_thingspeak()
     );
 
 
-    printf(
-        "URL: %s\n",
-        url
-    );
-
-
     http_buffer_len = 0;
 
     memset(
@@ -2630,12 +3360,6 @@ config.timeout_ms = 10000;
         );
 
 
-    printf(
-        "ThingSpeak HTTP status: %d\n",
-        status
-    );
-
-
     esp_http_client_cleanup(
         client
     );
@@ -2651,10 +3375,7 @@ config.timeout_ms = 10000;
     }
 
 
-    printf(
-        "ThingSpeak response:\n%s\n",
-        http_buffer
-    );
+    set_time_from_created_at(http_buffer);
 
 
     // --------------------------------------------------------
@@ -2714,6 +3435,22 @@ config.timeout_ms = 10000;
 
         return false;
     }
+
+
+    printf(
+        "URL: %s\n",
+        url
+    );
+
+    printf(
+        "ThingSpeak HTTP status: %d\n",
+        status
+    );
+
+    printf(
+        "ThingSpeak response:\n%s\n",
+        http_buffer
+    );
 
 
     // --------------------------------------------------------
@@ -2798,6 +3535,16 @@ config.timeout_ms = 10000;
         data;
 
 
+    if (
+        DEVICE_ID == HEAD_ID &&
+        data.brightness > 1
+    ) {
+        hold_power_for_ms(
+            (uint32_t)data.timeOn * 1000U
+        );
+    }
+
+
     send_thingspeak_update(
         &data
     );
@@ -2811,11 +3558,41 @@ config.timeout_ms = 10000;
         int target_device_id =
             data.pattern - 600;
 
-        if (
-            target_device_id > HEAD_ID &&
-            target_device_id < NUM_DEVICES
-        ) {
+        if (data.pattern == 650) {
+            MeshMessage head_status = {};
+            head_status.source_id = HEAD_ID;
+            head_status.target_id = HEAD_ID;
+            head_status.type = MSG_STATUS_RESPONSE;
+            head_status.command = network_state;
+            head_status.battery_mv = read_battery_level();
+            head_status.mesh_rssi_dbm =
+                strongest_recent_mesh_rssi();
+
+            printf(
+                "Pattern 650: collecting mesh RSSI status\n"
+            );
+
+            queue_status_upload(&head_status);
+            send_status_request(BROADCAST_ID);
+            hold_power_for_ms(STATUS_POWER_HOLD_MS);
+        } else if (target_device_id == HEAD_ID) {
+            MeshMessage head_status = {};
+            head_status.source_id = HEAD_ID;
+            head_status.target_id = HEAD_ID;
+            head_status.type = MSG_STATUS_RESPONSE;
+            head_status.command = network_state;
+            head_status.battery_mv = read_battery_level();
+            head_status.mesh_rssi_dbm =
+                strongest_recent_mesh_rssi();
+
+            printf(
+                "Pattern 600: queueing HEAD status and battery\n"
+            );
+
+            queue_status_upload(&head_status);
+        } else if (target_device_id < NUM_DEVICES) {
             send_status_request(target_device_id);
+            hold_power_for_ms(STATUS_POWER_HOLD_MS);
         } else {
             printf(
                 "Pattern %u does not select a remote device\n",
@@ -2870,6 +3647,11 @@ void thingspeak_task(
 
 extern "C" void app_main(void)
 {
+    esp_log_level_set(
+        "esp-x509-crt-bundle",
+        ESP_LOG_WARN
+    );
+
     printf("\n\n");
 
     printf(
@@ -2940,6 +3722,38 @@ extern "C" void app_main(void)
         0
     );
 
+    gpio_reset_pin(
+        POWER_SWITCH_GPIO
+    );
+
+    ESP_ERROR_CHECK(
+        gpio_set_direction(
+            POWER_SWITCH_GPIO,
+            GPIO_MODE_OUTPUT
+        )
+    );
+
+    gpio_set_level(
+        POWER_SWITCH_GPIO,
+        0
+    );
+
+    gpio_reset_pin(
+        NEOPIXEL_POWER_PIN
+    );
+
+    ESP_ERROR_CHECK(
+        gpio_set_direction(
+            NEOPIXEL_POWER_PIN,
+            GPIO_MODE_OUTPUT
+        )
+    );
+
+    gpio_set_level(
+        NEOPIXEL_POWER_PIN,
+        0
+    );
+
 
     // --------------------------------------------------------
     // RX QUEUE
@@ -2977,6 +3791,19 @@ extern "C" void app_main(void)
         printf(
             "Starting as HEAD\n"
         );
+
+        status_queue =
+            xQueueCreate(
+                4,
+                sizeof(MeshMessage)
+            );
+
+        if (!status_queue) {
+            printf(
+                "ERROR creating status upload queue\n"
+            );
+            return;
+        }
 
 
         network_state =
@@ -3019,6 +3846,33 @@ extern "C" void app_main(void)
 
         initialize_esp_now();
 
+        xTaskCreate(
+            status_upload_task,
+            "status_upload",
+            8192,
+            NULL,
+            3,
+            NULL
+        );
+
+        xTaskCreate(
+            update_retry_task,
+            "update_retry",
+            4096,
+            NULL,
+            3,
+            NULL
+        );
+
+        xTaskCreate(
+            power_switch_task,
+            "power_switch",
+            2048,
+            NULL,
+            3,
+            NULL
+        );
+
 
         xTaskCreate(
             rx_processing_task,
@@ -3050,6 +3904,39 @@ extern "C" void app_main(void)
 
 
         initialize_remote_radio();
+
+        initialize_neopixels();
+
+        led_queue =
+            xQueueCreate(
+                4,
+                sizeof(MeshMessage)
+            );
+
+        if (!led_queue) {
+            printf(
+                "ERROR creating LED update queue\n"
+            );
+            return;
+        }
+
+        xTaskCreate(
+            led_update_task,
+            "led_update",
+            4096,
+            NULL,
+            4,
+            NULL
+        );
+
+        xTaskCreate(
+            power_switch_task,
+            "power_switch",
+            2048,
+            NULL,
+            3,
+            NULL
+        );
 
 
         initialize_esp_now();
@@ -3171,6 +4058,16 @@ if (
     xTaskCreate(
         thingspeak_task,
         "thingspeak",
+        8192,
+        NULL,
+        3,
+        NULL
+    );
+
+
+    xTaskCreate(
+        head_status_task,
+        "head_status",
         8192,
         NULL,
         3,
