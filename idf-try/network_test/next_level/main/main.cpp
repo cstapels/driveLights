@@ -27,185 +27,14 @@
 
 #include "nvs_flash.h"
 
+#include "app_types.h"
+#include "lighting.h"
 
-// ============================================================
-// CONFIGURATION
-// ============================================================
-
-// Change this for each ESP32
-//
-// Head device = 0
-// Other devices = 1, 2, 3, etc.
-//
-#define DEVICE_ID 3 
-//1 is com9 swirly
-//4 device 2 on com 12
-//6? is device 3 on com11
-
-#define HEAD_ID 0
-
-#define NUM_DEVICES 5
-#define MAX_DEVICES 10
-
-// LED
-#define LED_GPIO GPIO_NUM_2
-#define POWER_SWITCH_GPIO GPIO_NUM_26
-#define NEOPIXEL_NUM_LEDS 150
-#define NEOPIXEL_DATA_PIN GPIO_NUM_4
-#define NEOPIXEL_POWER_PIN GPIO_NUM_27
-#define STATUS_POWER_HOLD_MS 6000
-
-// Mesh
-#define DEFAULT_TTL 10
-#define MAX_SEEN_MESSAGES 50
-#define BROADCAST_ID 255
-
-// Join beacon timing
-#define JOIN_BEACON_INTERVAL_MS 500
-
-// How long a remote scans each WiFi channel
-#define CHANNEL_SCAN_TIME_MS 150
-
-// Number of 2.4 GHz channels to scan
-#define FIRST_WIFI_CHANNEL 1
-#define LAST_WIFI_CHANNEL 11
-
-// Discovery timing
-#define DISCOVERY_INTERVAL_MS 1000
-#define REMOTE_DISCOVERY_DURATION_MS 10000
-#define UPDATE_RETRY_INTERVAL_MS 2000
-#define MAX_UPDATE_RETRIES 3
-
-// ThingSpeak
-#define THINGSPEAK_CHANNEL_ID 2060365
-#define STATUS_THINGSPEAK_CHANNEL_ID 364593
-#define STATUS_THINGSPEAK_API_KEY "OV5KJROGLZED81ZH"
-#define STATUS_THINGSPEAK_DEVICE_FIELD 3
-#define STATUS_THINGSPEAK_BATTERY_FIELD 4
-
-// Put credentials here on HEAD only
-#define WIFI_SSID           "Still_waters"
-#define WIFI_PASSWORD       "33turkeys511"
-#define THINGSPEAK_API_KEY  "TS0D8HVAOZLRAJ1N"
-
-// How often HEAD checks ThingSpeak
-#define THINGSPEAK_CHECK_INTERVAL_MS 3500
-#define HEAD_STATUS_DELAY_MS 15000
-#define HEAD_STATUS_INTERVAL_MS 3600000
-#define MESH_SIGNAL_MAX_AGE_MS 30000
-
-
-// ============================================================
-// MESSAGE TYPES
-// ============================================================
-
-enum MessageType : uint8_t {
-
-    MSG_JOIN_BEACON = 1,
-
-    MSG_DISCOVER,
-
-    MSG_TEST,
-
-    MSG_STATUS_REQUEST,
-
-    MSG_STATUS_RESPONSE,
-
-    MSG_THINGSPEAK_UPDATE,
-
-    MSG_UPDATE_ACK
-};
-
-
-// ============================================================
-// THINGSPEAK DATA
-// ============================================================
-
-typedef struct {
-
-    uint16_t brightness;
-
-    uint16_t color1;
-
-    uint16_t color2;
-
-    uint16_t color3;
-
-    uint16_t pattern;
-
-    uint16_t timeOn;
-
-    uint16_t sleepTime;
-
-    uint16_t fxSpeed;
-
-} ThingSpeakData;
-
-
-// ============================================================
-// MESH MESSAGE
-// ============================================================
-
-typedef struct {
-
-    uint32_t session_id;
-
-    uint32_t message_id;
-
-    uint8_t source_id;
-
-    uint8_t target_id;
-
-    uint8_t type;
-
-    uint8_t ttl;
-
-    uint8_t command;
-
-    uint16_t battery_mv;
-
-    int16_t mesh_rssi_dbm;
-
-    uint32_t ack_message_id;
-
-    // ThingSpeak payload
-    ThingSpeakData thingspeak;
-
-} MeshMessage;
-
-
-// ============================================================
-// JOIN BEACON
-// ============================================================
-
-typedef struct {
-    uint32_t session_id;
-    uint32_t beacon_id;
-    uint8_t source_id;
-    uint8_t type;
-    uint8_t ttl;
-    uint8_t channel;
-} JoinBeacon;
-
-
-// ============================================================
-// JOIN BEACON DUPLICATE TRACKING
-// ============================================================
-
-#define MAX_SEEN_BEACONS 20
-
-typedef struct {
-    uint32_t session_id;
-    uint32_t beacon_id;
-    uint8_t source_id;
-} SeenBeacon;
+// Shared configuration and message types live in app_types.h.
+// Runtime-only globals remain in main.cpp.
 
 SeenBeacon seen_beacons[MAX_SEEN_BEACONS] = {};
 int seen_beacon_index = 0;
-
-// ============================================================
-//my globals
-// ============================================================
 
 bool join_beacon_received = false;
 
@@ -382,7 +211,6 @@ QueueHandle_t status_queue;
 QueueHandle_t led_queue;
 volatile TickType_t power_off_at = 0;
 volatile TickType_t remote_power_off_at = 0;
-led_strip_handle_t neopixel_strip = nullptr;
 NeighborSignal neighbor_signals[MAX_DEVICES] = {};
 
 MeshMessage pending_update = {};
@@ -638,106 +466,9 @@ uint16_t read_battery_level()
     return (uint16_t)raw_level;
 }
 
-void initialize_neopixels()
-{
-    led_strip_config_t strip_config = {};
-    strip_config.strip_gpio_num = NEOPIXEL_DATA_PIN;
-    strip_config.max_leds = NEOPIXEL_NUM_LEDS;
-    strip_config.led_model = LED_MODEL_WS2812;
-    strip_config.color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB;
-
-    led_strip_rmt_config_t rmt_config = {};
-    rmt_config.clk_src = RMT_CLK_SRC_DEFAULT;
-    rmt_config.resolution_hz = 10 * 1000 * 1000;
-    rmt_config.mem_block_symbols = 64;
-    rmt_config.flags.with_dma = false;
-
-    ESP_ERROR_CHECK(
-        led_strip_new_rmt_device(
-            &strip_config,
-            &rmt_config,
-            &neopixel_strip
-        )
-    );
-
-    ESP_ERROR_CHECK(
-        led_strip_clear(neopixel_strip)
-    );
-
-    gpio_set_level(NEOPIXEL_POWER_PIN, 0);
-}
-
-void update_neopixels(
-    const ThingSpeakData *data
-)
-{
-    if (data->brightness <= 1) {
-        ESP_ERROR_CHECK(
-            led_strip_clear(neopixel_strip)
-        );
-        gpio_set_level(NEOPIXEL_POWER_PIN, 0);
-        return;
-    }
-
-    gpio_set_level(NEOPIXEL_POWER_PIN, 1);
-
-    if (data->pattern != 0) {
-        printf(
-            "NeoPixel pattern %u is not implemented yet\n",
-            data->pattern
-        );
-        return;
-    }
-
-    uint8_t red = (data->color1 >> 11) & 0x1F;
-    uint8_t green = (data->color1 >> 5) & 0x3F;
-    uint8_t blue = data->color1 & 0x1F;
-
-    red = (uint8_t)((red * 255U / 31U) * data->brightness / 255U);
-    green = (uint8_t)((green * 255U / 63U) * data->brightness / 255U);
-    blue = (uint8_t)((blue * 255U / 31U) * data->brightness / 255U);
-
-    for (int i = 0; i < NEOPIXEL_NUM_LEDS; i++) {
-        ESP_ERROR_CHECK(
-            led_strip_set_pixel(
-                neopixel_strip,
-                i,
-                red,
-                green,
-                blue
-            )
-        );
-    }
-
-    ESP_ERROR_CHECK(
-        led_strip_refresh(neopixel_strip)
-    );
-}
-
 void send_update_ack(
     uint32_t message_id
 );
-
-void led_update_task(
-    void *parameter
-)
-{
-    MeshMessage update;
-
-    while (1) {
-        if (
-            xQueueReceive(
-                led_queue,
-                &update,
-                portMAX_DELAY
-            ) == pdTRUE
-        ) {
-            update_neopixels(&update.thingspeak);
-            send_update_ack(update.message_id);
-        }
-    }
-}
-
 
 // ============================================================
 // LED
@@ -1290,13 +1021,13 @@ void send_thingspeak_update(
     );
 
     printf(
-        "Color1: %u\n",
-        data->color1
+        "Color1: %lu\n",
+        (unsigned long)data->color1
     );
 
     printf(
-        "Color2: %u\n",
-        data->color2
+        "Color2: %lu\n",
+        (unsigned long)data->color2
     );
 
     printf(
@@ -1477,13 +1208,13 @@ void process_thingspeak_update(
     );
 
     printf(
-        "Color1     = %u\n",
-        current_settings.color1
+        "Color1     = %lu\n",
+        (unsigned long)current_settings.color1
     );
 
     printf(
-        "Color2     = %u\n",
-        current_settings.color2
+        "Color2     = %lu\n",
+        (unsigned long)current_settings.color2
     );
 
     printf(
@@ -2127,16 +1858,7 @@ void process_mesh_message(
 
             case MSG_TEST:
 
-                printf(
-                    "Device %d processed "
-                    "TEST message!\n",
-                    DEVICE_ID
-                );
-
-                break;
-
-
-            case MSG_THINGSPEAK_UPDATE:
+case MSG_THINGSPEAK_UPDATE:
 
                 process_thingspeak_update(
                     msg
@@ -4083,9 +3805,6 @@ if (
 
     print_neighbors();
     print_mesh_members();
-
-
-    send_test_message();
 
 
     // Discovery is complete
