@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
 
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -29,6 +30,8 @@ static uint8_t juggle_blue[NEOPIXEL_NUM_LEDS];
 static uint8_t juggle_phase = 0;
 static uint8_t fade_level = 0;
 static bool fade_rising = true;
+static uint8_t mesh_fade_phase = 0;
+static uint8_t candy_cane_offset = 0;
 static float flare_position = 0.0F;
 static float flare_velocity = 0.0F;
 static float flare_brightness = 1.0F;
@@ -40,6 +43,38 @@ static float explosion_spark_velocity[EXPLOSION_SPARK_COUNT];
 static float explosion_spark_brightness[EXPLOSION_SPARK_COUNT];
 static int explosion_spark_count = 0;
 static bool flare_exploding = false;
+
+void reset_effects()
+{
+    memset(fire_heat, 0, sizeof(fire_heat));
+    rainbow_hue = 0;
+    memset(confetti_red, 0, sizeof(confetti_red));
+    memset(confetti_green, 0, sizeof(confetti_green));
+    memset(confetti_blue, 0, sizeof(confetti_blue));
+    memset(sinelon_red, 0, sizeof(sinelon_red));
+    memset(sinelon_green, 0, sizeof(sinelon_green));
+    memset(sinelon_blue, 0, sizeof(sinelon_blue));
+    sinelon_phase = 0;
+    memset(juggle_red, 0, sizeof(juggle_red));
+    memset(juggle_green, 0, sizeof(juggle_green));
+    memset(juggle_blue, 0, sizeof(juggle_blue));
+    juggle_phase = 0;
+    fade_level = 0;
+    fade_rising = true;
+    mesh_fade_phase = 0;
+    candy_cane_offset = 0;
+    flare_position = 0.0F;
+    flare_velocity = 0.0F;
+    flare_brightness = 1.0F;
+    memset(flare_spark_position, 0, sizeof(flare_spark_position));
+    memset(flare_spark_velocity, 0, sizeof(flare_spark_velocity));
+    memset(flare_spark_brightness, 0, sizeof(flare_spark_brightness));
+    memset(explosion_spark_position, 0, sizeof(explosion_spark_position));
+    memset(explosion_spark_velocity, 0, sizeof(explosion_spark_velocity));
+    memset(explosion_spark_brightness, 0, sizeof(explosion_spark_brightness));
+    explosion_spark_count = 0;
+    flare_exploding = false;
+}
 
 static uint8_t add_saturated(uint8_t value, uint8_t amount)
 {
@@ -489,6 +524,113 @@ static void fade_effect_step(const ThingSpeakData *data)
     ESP_ERROR_CHECK(led_strip_refresh(neopixel_strip));
 }
 
+static void mesh_fade_effect_step(const ThingSpeakData *data)
+{
+    uint8_t red = (uint8_t)((data->color1 >> 16) & 0xFFU);
+    uint8_t green = (uint8_t)((data->color1 >> 8) & 0xFFU);
+    uint8_t blue = (uint8_t)(data->color1 & 0xFFU);
+
+    // Calculate phase offset based on DEVICE_ID across the mesh
+    // Distribute 256 units of phase across NUM_DEVICES
+    uint8_t device_phase_offset = (uint8_t)(((uint32_t)DEVICE_ID * 256U) / (NUM_DEVICES > 0 ? NUM_DEVICES : 1));
+    uint8_t current_phase = (uint8_t)(mesh_fade_phase - device_phase_offset);
+
+    // Sine wave pulsation: sinf ranges [-1, 1] -> [0, 1] -> [0, 255]
+    float radians = ((float)current_phase / 255.0F) * 6.2831853F;
+    float sin_norm = (sinf(radians) + 1.0F) * 0.5F; // 0.0 to 1.0
+    uint8_t current_fade = (uint8_t)(sin_norm * 255.0F);
+
+    uint32_t scale = (uint32_t)data->brightness * current_fade;
+    red = (uint8_t)(((uint32_t)red * scale) / (255U * 255U));
+    green = (uint8_t)(((uint32_t)green * scale) / (255U * 255U));
+    blue = (uint8_t)(((uint32_t)blue * scale) / (255U * 255U));
+
+    for (int i = 0; i < NEOPIXEL_NUM_LEDS; i++) {
+        ESP_ERROR_CHECK(
+            led_strip_set_pixel(
+                neopixel_strip,
+                i,
+                red,
+                green,
+                blue
+            )
+        );
+    }
+
+    // Step the global phase forward each frame
+    mesh_fade_phase = (uint8_t)(mesh_fade_phase + 4U);
+
+    ESP_ERROR_CHECK(led_strip_refresh(neopixel_strip));
+}
+
+static void mesh_strip_fade_effect_step(const ThingSpeakData *data)
+{
+    uint8_t base_red = (uint8_t)((data->color1 >> 16) & 0xFFU);
+    uint8_t base_green = (uint8_t)((data->color1 >> 8) & 0xFFU);
+    uint8_t base_blue = (uint8_t)(data->color1 & 0xFFU);
+
+    int total_leds = (NUM_DEVICES > 0 ? NUM_DEVICES : 1) * NEOPIXEL_NUM_LEDS;
+
+    for (int i = 0; i < NEOPIXEL_NUM_LEDS; i++) {
+        int global_index = DEVICE_ID * NEOPIXEL_NUM_LEDS + i;
+        uint8_t offset = (uint8_t)(((uint32_t)global_index * 256U) / (uint32_t)total_leds);
+        uint8_t current_phase = (uint8_t)(mesh_fade_phase - offset);
+
+        float radians = ((float)current_phase / 255.0F) * 6.2831853F;
+        float sin_norm = (sinf(radians) + 1.0F) * 0.5F;
+        uint8_t current_fade = (uint8_t)(sin_norm * 255.0F);
+
+        uint32_t scale = (uint32_t)data->brightness * current_fade;
+        uint8_t red = (uint8_t)(((uint32_t)base_red * scale) / (255U * 255U));
+        uint8_t green = (uint8_t)(((uint32_t)base_green * scale) / (255U * 255U));
+        uint8_t blue = (uint8_t)(((uint32_t)base_blue * scale) / (255U * 255U));
+
+        ESP_ERROR_CHECK(
+            led_strip_set_pixel(
+                neopixel_strip,
+                i,
+                red,
+                green,
+                blue
+            )
+        );
+    }
+
+    mesh_fade_phase = (uint8_t)(mesh_fade_phase + 4U);
+
+    ESP_ERROR_CHECK(led_strip_refresh(neopixel_strip));
+}
+
+static void mesh_rainbow_solid_effect_step(const ThingSpeakData *data)
+{
+    // Each device is rendered as a solid color from the rainbow
+    uint8_t device_hue_offset = (uint8_t)(((uint32_t)DEVICE_ID * 256U) / (NUM_DEVICES > 0 ? NUM_DEVICES : 1));
+    uint8_t hue = (uint8_t)(rainbow_hue + device_hue_offset);
+
+    uint8_t red, green, blue;
+    hue_to_rgb(hue, &red, &green, &blue);
+
+    red = (uint8_t)((red * data->brightness) / 255U);
+    green = (uint8_t)((green * data->brightness) / 255U);
+    blue = (uint8_t)((blue * data->brightness) / 255U);
+
+    for (int i = 0; i < NEOPIXEL_NUM_LEDS; i++) {
+        ESP_ERROR_CHECK(
+            led_strip_set_pixel(
+                neopixel_strip,
+                i,
+                red,
+                green,
+                blue
+            )
+        );
+    }
+
+    rainbow_hue++;
+
+    ESP_ERROR_CHECK(led_strip_refresh(neopixel_strip));
+}
+
 static void clear_flare_pixels()
 {
     ESP_ERROR_CHECK(led_strip_clear(neopixel_strip));
@@ -597,43 +739,126 @@ static void flare_effect_step(const ThingSpeakData *data)
     ESP_ERROR_CHECK(led_strip_refresh(neopixel_strip));
 }
 
+static void candy_cane_effect_step(const ThingSpeakData *data, bool use_custom_colors)
+{
+    // Alternate stripes of width 4 (stripe cycle length = 8)
+    const int stripe_width = 4;
+    const int cycle_len = stripe_width * 2;
+
+    uint8_t c1_red, c1_green, c1_blue;
+    uint8_t c2_red, c2_green, c2_blue;
+
+    if (use_custom_colors) {
+        c1_red = (uint8_t)((data->color1 >> 16) & 0xFFU);
+        c1_green = (uint8_t)((data->color1 >> 8) & 0xFFU);
+        c1_blue = (uint8_t)(data->color1 & 0xFFU);
+
+        c2_red = (uint8_t)((data->color2 >> 16) & 0xFFU);
+        c2_green = (uint8_t)((data->color2 >> 8) & 0xFFU);
+        c2_blue = (uint8_t)(data->color2 & 0xFFU);
+    } else {
+        // Red
+        c1_red = 255;
+        c1_green = 0;
+        c1_blue = 0;
+
+        // White
+        c2_red = 255;
+        c2_green = 255;
+        c2_blue = 255;
+    }
+
+    for (int i = 0; i < NEOPIXEL_NUM_LEDS; i++) {
+        int pos = (i + candy_cane_offset) % cycle_len;
+        uint8_t red, green, blue;
+
+        if (pos < stripe_width) {
+            red = c1_red;
+            green = c1_green;
+            blue = c1_blue;
+        } else {
+            red = c2_red;
+            green = c2_green;
+            blue = c2_blue;
+        }
+
+        red = (uint8_t)((red * data->brightness) / 255U);
+        green = (uint8_t)((green * data->brightness) / 255U);
+        blue = (uint8_t)((blue * data->brightness) / 255U);
+
+        ESP_ERROR_CHECK(
+            led_strip_set_pixel(
+                neopixel_strip,
+                i,
+                red,
+                green,
+                blue
+            )
+        );
+    }
+
+    candy_cane_offset = (uint8_t)((candy_cane_offset + 1) % cycle_len);
+
+    ESP_ERROR_CHECK(led_strip_refresh(neopixel_strip));
+}
+
 void apply_effect(const ThingSpeakData *data)
 {
     switch (data->pattern) {
-        case 2:
+        case 1:
             fire_effect_step(data);
             break;
 
-        case 3:
+        case 2:
             rainbow_effect_step(data, false);
             break;
 
-        case 4:
+        case 3:
             rainbow_effect_step(data, true);
             break;
 
-        case 5:
+        case 4:
             confetti_effect_step(data);
             break;
 
-        case 6:
+        case 5:
             sinelon_effect_step(data);
             break;
 
-        case 7:
+        case 6:
             bpm_effect_step(data);
             break;
 
-        case 8:
+        case 7:
             juggle_effect_step(data);
             break;
 
-        case 9:
+        case 8:
             fade_effect_step(data);
             break;
 
-        case 10:
+        case 9:
             flare_effect_step(data);
+            break;
+
+        case 10:
+            candy_cane_effect_step(data, false);
+            break;
+
+        case 11:
+            candy_cane_effect_step(data, true);
+            break;
+
+        case 12:
+            mesh_fade_effect_step(data);
+            break;
+
+        case 13:
+            mesh_strip_fade_effect_step(data);
+            break;
+
+        case 14:
+            mesh_rainbow_solid_effect_step(data);
             break;
 
         default:

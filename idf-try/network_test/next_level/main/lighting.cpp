@@ -51,11 +51,7 @@ void update_neopixels(const ThingSpeakData *data)
 
     gpio_set_level(NEOPIXEL_POWER_PIN, 1);
 
-    if (
-        (data->pattern >= 2 && data->pattern <= 8) ||
-        data->pattern == 9
-        || data->pattern == 10
-    ) {
+    if (data->pattern >= 1 && data->pattern <= 14) {
         apply_effect(data);
         return;
     }
@@ -108,6 +104,9 @@ void led_update_task(void *parameter)
                 wait_ticks
             ) == pdTRUE
         ) {
+            if (has_data && current_data.pattern != update.thingspeak.pattern) {
+                reset_effects();
+            }
             current_data = update.thingspeak;
             has_data = true;
             update_neopixels(&current_data);
@@ -116,9 +115,8 @@ void led_update_task(void *parameter)
 
         if (
             has_data &&
-            ((current_data.pattern >= 2 && current_data.pattern <= 8) ||
-             current_data.pattern == 9 ||
-             current_data.pattern == 10) &&
+            current_data.pattern >= 1 &&
+            current_data.pattern <= 14 &&
             current_data.brightness > 1
         ) {
             uint16_t speed = current_data.fxSpeed;

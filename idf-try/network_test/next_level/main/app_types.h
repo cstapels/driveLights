@@ -17,7 +17,7 @@
 // Head device = 0
 // Other devices = 1, 2, 3, etc.
 //
-#define DEVICE_ID 3
+#define DEVICE_ID 0
 //0 is com 13 now says 3 on it
 //1 is com9 swirly
 //4 device 2 on com 12

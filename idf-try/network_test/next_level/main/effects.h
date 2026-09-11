@@ -3,4 +3,5 @@
 #include "app_types.h"
 
 void apply_effect(const ThingSpeakData *data);
+void reset_effects();
 void fire_effect_step(const ThingSpeakData *data);
