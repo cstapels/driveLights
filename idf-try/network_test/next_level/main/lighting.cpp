@@ -16,7 +16,7 @@ void initialize_neopixels()
     strip_config.strip_gpio_num = NEOPIXEL_DATA_PIN;
     strip_config.max_leds = NEOPIXEL_NUM_LEDS;
     strip_config.led_model = LED_MODEL_WS2812;
-    strip_config.color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_RGB;
+    strip_config.color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB;
 
     led_strip_rmt_config_t rmt_config = {};
     rmt_config.clk_src = RMT_CLK_SRC_DEFAULT;
@@ -37,6 +37,20 @@ void initialize_neopixels()
     );
 
     gpio_set_level(NEOPIXEL_POWER_PIN, 0);
+}
+
+static void get_solid_rgb(const ThingSpeakData *data, uint8_t *red, uint8_t *green, uint8_t *blue)
+{
+    // Handle both packed 24-bit 0xRRGGBB in color1 and individual R, G, B in color1, color2, color3
+    if (data->color1 > 255U) {
+        *red = (uint8_t)((data->color1 >> 16) & 0xFFU);
+        *green = (uint8_t)((data->color1 >> 8) & 0xFFU);
+        *blue = (uint8_t)(data->color1 & 0xFFU);
+    } else {
+        *red = (uint8_t)(data->color1 & 0xFFU);
+        *green = (uint8_t)(data->color2 & 0xFFU);
+        *blue = (uint8_t)(data->color3 & 0xFFU);
+    }
 }
 
 void update_neopixels(const ThingSpeakData *data)
@@ -64,13 +78,12 @@ void update_neopixels(const ThingSpeakData *data)
         return;
     }
 
-    uint8_t red = (uint8_t)((data->color1 >> 16) & 0xFFU);
-    uint8_t green = (uint8_t)((data->color1 >> 8) & 0xFFU);
-    uint8_t blue = (uint8_t)(data->color1 & 0xFFU);
+    uint8_t red, green, blue;
+    get_solid_rgb(data, &red, &green, &blue);
 
-    red = (uint8_t)((red * data->brightness) / 255U);
-    green = (uint8_t)((green * data->brightness) / 255U);
-    blue = (uint8_t)((blue * data->brightness) / 255U);
+    red = (uint8_t)(((uint32_t)red * data->brightness) / 255U);
+    green = (uint8_t)(((uint32_t)green * data->brightness) / 255U);
+    blue = (uint8_t)(((uint32_t)blue * data->brightness) / 255U);
 
     for (int i = 0; i < NEOPIXEL_NUM_LEDS; i++) {
         ESP_ERROR_CHECK(
@@ -104,13 +117,22 @@ void led_update_task(void *parameter)
                 wait_ticks
             ) == pdTRUE
         ) {
-            if (has_data && current_data.pattern != update.thingspeak.pattern) {
-                reset_effects();
+            // Drain any pending queue items to guarantee running the latest command
+            while (xQueueReceive(led_queue, &update, 0) == pdTRUE) {
             }
+
+            reset_effects();
             current_data = update.thingspeak;
             has_data = true;
             update_neopixels(&current_data);
             send_update_ack(update.message_id);
+        } else if (
+            has_data &&
+            current_data.pattern >= 1 &&
+            current_data.pattern <= 14 &&
+            current_data.brightness > 1
+        ) {
+            update_neopixels(&current_data);
         }
 
         if (
@@ -125,7 +147,6 @@ void led_update_task(void *parameter)
             }
 
             wait_ticks = pdMS_TO_TICKS(308U - ((speed * 14U) / 5U));
-            update_neopixels(&current_data);
         } else {
             wait_ticks = portMAX_DELAY;
         }

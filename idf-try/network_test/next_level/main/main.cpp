@@ -273,14 +273,14 @@ void hold_power_for_ms(
     uint32_t duration_ms
 )
 {
-    TickType_t requested_off_at =
-        xTaskGetTickCount() + pdMS_TO_TICKS(duration_ms);
-
-    if (requested_off_at > power_off_at) {
-        power_off_at = requested_off_at;
+    if (duration_ms > 0) {
+        power_off_at =
+            xTaskGetTickCount() + pdMS_TO_TICKS(duration_ms);
+        gpio_set_level(POWER_SWITCH_GPIO, 1);
+    } else {
+        power_off_at = 0;
+        gpio_set_level(POWER_SWITCH_GPIO, 0);
     }
-
-    gpio_set_level(POWER_SWITCH_GPIO, 1);
 }
 
 void power_switch_task(
@@ -304,6 +304,12 @@ void power_switch_task(
         ) {
             gpio_set_level(NEOPIXEL_POWER_PIN, 0);
             remote_power_off_at = 0;
+
+            if (led_queue) {
+                MeshMessage off_msg = {};
+                off_msg.thingspeak.brightness = 0;
+                xQueueSend(led_queue, &off_msg, 0);
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -314,10 +320,14 @@ void hold_remote_power_for_ms(
     uint32_t duration_ms
 )
 {
-    remote_power_off_at =
-        xTaskGetTickCount() + pdMS_TO_TICKS(duration_ms);
-
-    gpio_set_level(NEOPIXEL_POWER_PIN, 1);
+    if (duration_ms > 0) {
+        remote_power_off_at =
+            xTaskGetTickCount() + pdMS_TO_TICKS(duration_ms);
+        gpio_set_level(NEOPIXEL_POWER_PIN, 1);
+    } else {
+        remote_power_off_at = 0;
+        gpio_set_level(NEOPIXEL_POWER_PIN, 0);
+    }
 }
 
 void record_received_signal(
@@ -1255,6 +1265,10 @@ void process_thingspeak_update(
         } else {
             remote_power_off_at = 0;
             gpio_set_level(NEOPIXEL_POWER_PIN, 0);
+        }
+
+        MeshMessage dummy;
+        while (xQueueReceive(led_queue, &dummy, 0) == pdTRUE) {
         }
 
         if (

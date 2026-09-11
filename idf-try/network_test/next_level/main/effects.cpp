@@ -633,7 +633,11 @@ static void mesh_rainbow_solid_effect_step(const ThingSpeakData *data)
 
 static void clear_flare_pixels()
 {
-    ESP_ERROR_CHECK(led_strip_clear(neopixel_strip));
+    if (neopixel_strip) {
+        for (int i = 0; i < NEOPIXEL_NUM_LEDS; i++) {
+            led_strip_set_pixel(neopixel_strip, i, 0, 0, 0);
+        }
+    }
 }
 
 static void start_flare()
