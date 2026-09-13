@@ -14,7 +14,7 @@ constexpr gpio_num_t kLedPowerPin = GPIO_NUM_27;
 constexpr uint8_t kBrightness = 128;
 constexpr TickType_t kColorTime = pdMS_TO_TICKS(5000);
 constexpr TickType_t kOffTime = pdMS_TO_TICKS(5000);
-constexpr int kLedCount = 60;
+constexpr int kLedCount = 150;
 
 void set_color(led_strip_handle_t strip, uint8_t red, uint8_t green, uint8_t blue)
 {

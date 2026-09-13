@@ -1872,7 +1872,15 @@ void process_mesh_message(
 
             case MSG_TEST:
 
-case MSG_THINGSPEAK_UPDATE:
+                printf(
+                    "Device %d processed TEST message\n",
+                    DEVICE_ID
+                );
+
+                break;
+
+
+            case MSG_THINGSPEAK_UPDATE:
 
                 process_thingspeak_update(
                     msg
@@ -2287,6 +2295,10 @@ void initialize_remote_radio()
         esp_wifi_start()
     );
 
+    // Modem sleep power-save corrupts RMT (WS2812) timing on this target.
+    ESP_ERROR_CHECK(
+        esp_wifi_set_ps(WIFI_PS_NONE)
+    );
 
     printf(
         "Remote radio started "
