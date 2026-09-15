@@ -1041,7 +1041,7 @@ void send_thingspeak_update(
     );
 
     printf(
-        "Color3: %u\n",
+        "Color3: %lu\n",
         data->color3
     );
 
@@ -1228,7 +1228,7 @@ void process_thingspeak_update(
     );
 
     printf(
-        "Color3     = %u\n",
+        "Color3     = %lu\n",
         current_settings.color3
     );
 

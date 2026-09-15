@@ -95,7 +95,7 @@ typedef struct {
     uint16_t brightness;
     uint32_t color1;
     uint32_t color2;
-    uint16_t color3;
+    uint32_t color3;
     uint16_t pattern;
     uint16_t timeOn;
     uint16_t sleepTime;

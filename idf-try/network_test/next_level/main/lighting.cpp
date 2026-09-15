@@ -56,14 +56,6 @@ void initialize_neopixels() {
     strip_config.led_model = LED_MODEL_WS2812;
     strip_config.color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_RGB;
 
-    led_strip_rmt_config_t rmt_config = {};
-    rmt_config.clk_src = RMT_CLK_SRC_DEFAULT;
-    rmt_config.resolution_hz = 10 * 1000 * 1000;
-    // Larger buffer reduces ISR refills so WiFi/ESP-NOW interrupt latency
-    // can't starve the RMT channel and corrupt pixels mid-transmission.
-    rmt_config.mem_block_symbols = 256;
-    rmt_config.flags.with_dma = false;
-
     //SPI CONFIGS
     led_strip_spi_config_t spi_config = {
         .clk_src = SPI_CLK_SRC_DEFAULT,
@@ -75,8 +67,7 @@ void initialize_neopixels() {
     ESP_ERROR_CHECK(led_strip_new_spi_device(&strip_config, &spi_config, &neopixel_strip));
 
     ESP_ERROR_CHECK(led_strip_clear(neopixel_strip));
-    
-    flash_startup_test_sequence();
+    ESP_ERROR_CHECK(led_strip_refresh(neopixel_strip));
 }
 
 static void get_solid_rgb(const ThingSpeakData *data, uint8_t *red, uint8_t *green, uint8_t *blue)
@@ -107,7 +98,7 @@ void update_neopixels(const ThingSpeakData *data)
 
     gpio_set_level(NEOPIXEL_POWER_PIN, 1);
 
-    if (data->pattern >= 1 && data->pattern <= 14) {
+    if (data->pattern >= 1 && data->pattern <= 21) {
         apply_effect(data);
         return;
     }
@@ -186,7 +177,7 @@ void led_update_task(void *parameter)
         } else if (
             has_data &&
             current_data.pattern >= 1 &&
-            current_data.pattern <= 14 &&
+            current_data.pattern <= 21 &&
             current_data.brightness > 1
         ) {
             update_neopixels(&current_data);
@@ -195,7 +186,7 @@ void led_update_task(void *parameter)
         if (
             has_data &&
             current_data.pattern >= 1 &&
-            current_data.pattern <= 14 &&
+            current_data.pattern <= 21 &&
             current_data.brightness > 1
         ) {
             uint16_t speed = current_data.fxSpeed;
@@ -203,7 +194,20 @@ void led_update_task(void *parameter)
                 speed = 100;
             }
 
-            wait_ticks = pdMS_TO_TICKS(308U - ((speed * 14U) / 5U));
+            uint32_t frame_delay_ms;
+            if (
+                current_data.pattern == 10 ||
+                current_data.pattern == 11 ||
+                current_data.pattern == 15 ||
+                current_data.pattern == 16 ||
+                current_data.pattern >= 17
+            ) {
+                frame_delay_ms = 240U - (speed * 2U);
+            } else {
+                frame_delay_ms = 240U - ((speed * 14U) / 5U);
+            }
+
+            wait_ticks = pdMS_TO_TICKS(frame_delay_ms);
         } else {
             wait_ticks = portMAX_DELAY;
         }

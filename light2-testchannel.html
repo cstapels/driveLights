@@ -136,6 +136,17 @@
             </div>
 
         </div>
+		        <div class="colorPickerContainer">
+
+            <h3>Color 3</h3>
+
+            <div id="picker3"></div>
+
+            <div class="colorValue">
+                <span id="color3Value">0x0000FF</span>
+            </div>
+
+        </div>
 
     </div>
 
@@ -157,6 +168,15 @@
         // =============================
 
         var colorPicker2 = new iro.ColorPicker("#picker2", {
+            width: 220,
+            color: "#0000FF"
+        });
+
+        // =============================
+        // COLOR PICKER 3
+        // =============================
+
+        var colorPicker3 = new iro.ColorPicker("#picker3", {
             width: 220,
             color: "#0000FF"
         });
@@ -216,6 +236,9 @@
 
             document.getElementById("color2Value").innerHTML =
                 packedRGBHex(colorPicker2.color.rgb);
+				
+				            document.getElementById("color3Value").innerHTML =
+                packedRGBHex(colorPicker3.color.rgb);
 
         }
 
@@ -223,6 +246,8 @@
         colorPicker1.on("color:change", updateColorValues);
 
         colorPicker2.on("color:change", updateColorValues);
+		
+        colorPicker3.on("color:change", updateColorValues);
 
         updateColorValues();
 
@@ -281,7 +306,7 @@
 
         <tr width="100%">
 
-            <td width="300">
+            <td width="200">
 
                 <input type="radio"
                        id="solid"
@@ -367,7 +392,7 @@
             </td>
 
 
-            <td width="300" valign="top">
+            <td width="200" valign="top">
 
                 <input type="radio"
                        id="fx9"
@@ -419,7 +444,7 @@
                        name="efx"
                        value="14">
 
-                <label for="fx14">awesome1</label>
+                <label for="fx14">Dual Fade</label>
                 <br>
 
 
@@ -428,7 +453,7 @@
                        name="efx"
                        value="15">
 
-                <label for="fx15">Awesome2</label>
+                <label for="fx15">Three Color Step</label>
                 <br>
 
 
@@ -437,10 +462,55 @@
                        name="efx"
                        value="16">
 
-                <label for="fx16">Awesome3</label>
+                <label for="fx16">Rain</label>
                 <br>
 
             </td>
+<td width="200" valign="top">
+
+
+                <input type="radio"
+                       id="fx16"
+                       name="efx"
+                       value="16">
+
+                <label for="fx16">Center Glow</label>
+                <br>
+
+
+                <input type="radio"
+                       id="fx17"
+                       name="efx"
+                       value="17">
+
+                <label for="fx17">Ocean Swell</label>
+                <br>
+
+
+                <input type="radio"
+                       id="fx18"
+                       name="efx"
+                       value="18">
+
+                <label for="fx18">Color Drift</label>
+                <br>
+
+
+                <input type="radio"
+                       id="fx19"
+                       name="efx"
+                       value="19">
+
+                <label for="fx19">Northern Lights</label>
+                <br>
+				                <input type="radio"
+                       id="fx20"
+                       name="efx"
+                       value="20">
+
+                <label for="fx19">Ember Glow</label>
+                <br>
+</td>
 
         </tr>
 
@@ -623,6 +693,9 @@
 
             var color2 =
                 packedRGB(colorPicker2.color.rgb);
+				
+            var color3 =
+                packedRGB(colorPicker3.color.rgb);
 
 
             var color1Hex =
@@ -678,7 +751,7 @@
             // field1 = brightness
             // field2 = packed Color 1
             // field3 = packed Color 2
-            // field4 = unused
+            // field4 = packed color 3
             // field5 = effect
             // field6 = time on
             // field7 = sleep time
@@ -690,6 +763,7 @@
                 bright +
                 "&field2=" + color1 +
                 "&field3=" + color2 +
+				"&field4=" + color3 +
                 "&field5=" + effectNum +
                 "&field6=" + lightTime +
                 "&field7=" + sleepTime +
@@ -708,6 +782,12 @@
                 packedRGBHex(colorPicker2.color.rgb),
                 color2
             );
+			
+            console.log(
+                "Color 3:",
+                packedRGBHex(colorPicker3.color.rgb),
+                color3
+            );	
 
 
             console.log(
@@ -911,4 +991,4 @@
 </body>
 
 </html>
-```
+
