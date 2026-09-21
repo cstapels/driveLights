@@ -17,16 +17,15 @@
 // Head device = 0
 // Other devices = 1, 2, 3, etc.
 //
-#define DEVICE_ID 3
-//0 is com 13 now says 3 on it
+#define DEVICE_ID 8 //0 is com 13 now says 3 on it
 //1 is com9 swirly
 //4 device 2 on com 12
 //6? is device 3 on com11
 
 #define HEAD_ID 0
 
-#define NUM_DEVICES 5
-#define MAX_DEVICES 10
+#define NUM_DEVICES 11
+#define MAX_DEVICES 16
 
 // LED
 #define LED_GPIO GPIO_NUM_2
@@ -34,6 +33,7 @@
 #define NEOPIXEL_NUM_LEDS 150
 #define NEOPIXEL_DATA_PIN GPIO_NUM_4
 #define NEOPIXEL_POWER_PIN GPIO_NUM_27
+#define NEOPIXEL_POWER_SETTLE_DELAY_MS 100
 #define STATUS_POWER_HOLD_MS 6000
 
 // Mesh
@@ -53,7 +53,7 @@
 
 // Discovery timing
 #define DISCOVERY_INTERVAL_MS 1000
-#define REMOTE_DISCOVERY_DURATION_MS 10000
+#define REMOTE_DISCOVERY_DURATION_MS 4000
 #define UPDATE_RETRY_INTERVAL_MS 2000
 #define MAX_UPDATE_RETRIES 3
 
@@ -74,6 +74,13 @@
 #define HEAD_STATUS_DELAY_MS 15000
 #define HEAD_STATUS_INTERVAL_MS 3600000
 #define MESH_SIGNAL_MAX_AGE_MS 30000
+#define MAX_REMOTE_ANIMATION_MS (60UL * 60UL * 1000UL)
+#define DIAGNOSTIC_FAILURE_COMMAND 255
+#define HEAD_POWER_WAKE_DELAY_MS 400
+#define HEAD_POWER_SETTLE_DELAY_MS 1200
+#define HEAD_DISCOVERY_RETRY_COUNT 3
+#define HEAD_DISCOVERY_RETRY_DELAY_MS 300
+#define HEAD_UPDATE_DISCOVERY_TIMEOUT_MS 6000
 
 // ============================================================
 // MESSAGE TYPES

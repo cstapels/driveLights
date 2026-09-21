@@ -97,6 +97,13 @@ void update_neopixels(const ThingSpeakData *data)
     }
 
     gpio_set_level(NEOPIXEL_POWER_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(NEOPIXEL_POWER_SETTLE_DELAY_MS));
+
+    printf(
+        "update_neopixels: power GPIO %d level=%d\n",
+        NEOPIXEL_POWER_PIN,
+        gpio_get_level(NEOPIXEL_POWER_PIN)
+    );
 
     if (data->pattern >= 1 && data->pattern <= 21) {
         apply_effect(data);

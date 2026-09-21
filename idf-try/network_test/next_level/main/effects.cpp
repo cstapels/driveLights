@@ -28,9 +28,10 @@ static uint8_t juggle_red[NEOPIXEL_NUM_LEDS];
 static uint8_t juggle_green[NEOPIXEL_NUM_LEDS];
 static uint8_t juggle_blue[NEOPIXEL_NUM_LEDS];
 static uint8_t juggle_phase = 0;
-static uint8_t fade_level = 0;
+static float fade_position = 0.0F;
 static bool fade_rising = true;
 static uint8_t mesh_fade_phase = 0;
+static const float FADE_STEP = 3.7F; // ~35% slower than the original step of 5
 static uint8_t candy_cane_offset = 0;
 static float flare_position = 0.0F;
 static float flare_velocity = 0.0F;
@@ -102,7 +103,7 @@ void reset_effects()
     memset(juggle_green, 0, sizeof(juggle_green));
     memset(juggle_blue, 0, sizeof(juggle_blue));
     juggle_phase = 0;
-    fade_level = 0;
+    fade_position = 0.0F;
     fade_rising = true;
     mesh_fade_phase = 0;
     candy_cane_offset = 0;
@@ -571,6 +572,8 @@ static void fade_effect_step(const ThingSpeakData *data)
     uint8_t green = (uint8_t)((data->color1 >> 8) & 0xFFU);
     uint8_t blue = (uint8_t)(data->color1 & 0xFFU);
 
+    uint8_t fade_level = (uint8_t)fade_position;
+
     uint32_t scale = (uint32_t)data->brightness * fade_level;
     red = (uint8_t)(((uint32_t)red * scale) / (255U * 255U));
     green = (uint8_t)(((uint32_t)green * scale) / (255U * 255U));
@@ -589,17 +592,17 @@ static void fade_effect_step(const ThingSpeakData *data)
     }
 
     if (fade_rising) {
-        if (fade_level >= 250U) {
-            fade_level = 255U;
+        if (fade_position >= 255.0F - FADE_STEP) {
+            fade_position = 255.0F;
             fade_rising = false;
         } else {
-            fade_level = (uint8_t)(fade_level + 5U);
+            fade_position += FADE_STEP;
         }
-    } else if (fade_level <= 5U) {
-        fade_level = 0;
+    } else if (fade_position <= FADE_STEP) {
+        fade_position = 0.0F;
         fade_rising = true;
     } else {
-        fade_level = (uint8_t)(fade_level - 5U);
+        fade_position -= FADE_STEP;
     }
 
     ESP_ERROR_CHECK(led_strip_refresh(neopixel_strip));

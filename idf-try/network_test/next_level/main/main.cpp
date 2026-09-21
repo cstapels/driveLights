@@ -186,7 +186,11 @@ bool device_time_initialized = false;
 // RECEIVE QUEUE
 // ============================================================
 
-#define RX_QUEUE_SIZE 20
+#define RX_QUEUE_SIZE 64
+#define STATUS_QUEUE_SIZE (MAX_DEVICES + 2)
+#define STATUS_UPLOAD_INTERVAL_MS 1500
+#define STATUS_UPLOAD_RETRIES 3
+#define STATUS_RESPONSE_DELAY_MS 250
 
 typedef struct {
 
@@ -211,6 +215,13 @@ QueueHandle_t status_queue;
 QueueHandle_t led_queue;
 volatile TickType_t power_off_at = 0;
 volatile TickType_t remote_power_off_at = 0;
+volatile TickType_t head_discovery_until = 0;
+volatile bool diagnostic_pending = false;
+volatile uint32_t diagnostic_expected_mask = 0;
+volatile uint32_t diagnostic_response_mask = 0;
+volatile TickType_t diagnostic_deadline = 0;
+volatile bool head_wifi_connected = false;
+volatile bool mesh_power_enabled = false;
 NeighborSignal neighbor_signals[MAX_DEVICES] = {};
 
 MeshMessage pending_update = {};
@@ -219,8 +230,15 @@ volatile uint8_t update_ack_mask = 0;
 uint8_t update_expected_ack_mask = 0;
 TickType_t update_retry_at = 0;
 uint8_t update_retry_count = 0;
+char status_http_response[32] = {};
+size_t status_http_response_length = 0;
+const uint8_t broadcast_mac[6] =
+    {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 
-void write_status_to_thingspeak(
+uint16_t read_battery_level();
+int16_t strongest_recent_mesh_rssi();
+
+bool write_status_to_thingspeak(
     const MeshMessage *msg
 );
 
@@ -230,6 +248,31 @@ esp_err_t status_http_event(
     esp_http_client_event_t *evt
 )
 {
+    if (
+        evt->event_id == HTTP_EVENT_ON_DATA &&
+        evt->data != NULL &&
+        evt->data_len > 0
+    ) {
+        size_t remaining =
+            sizeof(status_http_response) -
+            1 -
+            status_http_response_length;
+
+        size_t copy_length =
+            (size_t)evt->data_len < remaining
+                ? (size_t)evt->data_len
+                : remaining;
+
+        memcpy(
+            status_http_response + status_http_response_length,
+            evt->data,
+            copy_length
+        );
+
+        status_http_response_length += copy_length;
+        status_http_response[status_http_response_length] = '\0';
+    }
+
     return ESP_OK;
 }
 
@@ -247,7 +290,32 @@ void status_upload_task(
                 portMAX_DELAY
             ) == pdTRUE
         ) {
-            write_status_to_thingspeak(&msg);
+            bool uploaded = false;
+
+            for (int attempt = 1;
+                 attempt <= STATUS_UPLOAD_RETRIES && !uploaded;
+                 attempt++) {
+                uploaded = write_status_to_thingspeak(&msg);
+
+                if (!uploaded && attempt < STATUS_UPLOAD_RETRIES) {
+                    printf(
+                        "Retrying ThingSpeak status upload for Device %d "
+                        "(attempt %d/%d)\n",
+                        msg.source_id,
+                        attempt + 1,
+                        STATUS_UPLOAD_RETRIES
+                    );
+                    vTaskDelay(
+                        pdMS_TO_TICKS(STATUS_UPLOAD_INTERVAL_MS)
+                    );
+                }
+            }
+
+            if (uploaded) {
+                vTaskDelay(
+                    pdMS_TO_TICKS(STATUS_UPLOAD_INTERVAL_MS)
+                );
+            }
         }
     }
 }
@@ -260,7 +328,7 @@ void queue_status_upload(
         xQueueSend(
             status_queue,
             msg,
-            0
+            pdMS_TO_TICKS(1000)
         ) != pdTRUE
     ) {
         printf(
@@ -269,14 +337,90 @@ void queue_status_upload(
     }
 }
 
+void start_diagnostic_collection(
+    int target_device_id
+)
+{
+    diagnostic_expected_mask = 0;
+
+    if (target_device_id == BROADCAST_ID) {
+        for (int i = 0; i < NUM_DEVICES; i++) {
+            diagnostic_expected_mask |= 1U << i;
+        }
+    } else if (
+        target_device_id >= 0 &&
+        target_device_id < 32
+    ) {
+        diagnostic_expected_mask = 1U << target_device_id;
+    }
+
+    diagnostic_response_mask = 0;
+    diagnostic_pending = true;
+    diagnostic_deadline =
+        xTaskGetTickCount() +
+        pdMS_TO_TICKS(REMOTE_DISCOVERY_DURATION_MS);
+}
+
+void queue_diagnostic_failure()
+{
+    MeshMessage failure = {};
+    failure.source_id = HEAD_ID;
+    failure.target_id = HEAD_ID;
+    failure.type = MSG_STATUS_RESPONSE;
+    failure.command = DIAGNOSTIC_FAILURE_COMMAND;
+    failure.battery_mv = read_battery_level();
+    failure.mesh_rssi_dbm = strongest_recent_mesh_rssi();
+    failure.ack_message_id =
+        diagnostic_expected_mask & ~diagnostic_response_mask;
+
+    queue_status_upload(&failure);
+    diagnostic_pending = false;
+
+    printf(
+        "Diagnostic failed; missing device mask=0x%lx\n",
+        (unsigned long)failure.ack_message_id
+    );
+}
+
+void send_join_beacon();
+
 void hold_power_for_ms(
     uint32_t duration_ms
 )
 {
     if (duration_ms > 0) {
+        bool was_off = power_off_at == 0;
+
         power_off_at =
             xTaskGetTickCount() + pdMS_TO_TICKS(duration_ms);
         gpio_set_level(POWER_SWITCH_GPIO, 1);
+
+        if (
+            DEVICE_ID == HEAD_ID &&
+            network_state == NETWORK_READY
+        ) {
+            mesh_power_enabled = true;
+            network_state = NETWORK_DISCOVERY;
+            head_discovery_until =
+                xTaskGetTickCount() +
+                pdMS_TO_TICKS(REMOTE_DISCOVERY_DURATION_MS);
+
+            printf(
+                "HEAD command: reopening mesh discovery (power was %s)\n",
+                was_off ? "off" : "already on"
+            );
+
+            for (int attempt = 0; attempt < HEAD_DISCOVERY_RETRY_COUNT; ++attempt) {
+                if (attempt > 0) {
+                    vTaskDelay(pdMS_TO_TICKS(HEAD_DISCOVERY_RETRY_DELAY_MS));
+                } else {
+                    vTaskDelay(pdMS_TO_TICKS(HEAD_POWER_WAKE_DELAY_MS));
+                }
+
+                send_join_beacon();
+            }
+
+        }
     } else {
         power_off_at = 0;
         gpio_set_level(POWER_SWITCH_GPIO, 0);
@@ -296,6 +440,7 @@ void power_switch_task(
         ) {
             gpio_set_level(POWER_SWITCH_GPIO, 0);
             power_off_at = 0;
+            mesh_power_enabled = false;
         }
 
         if (
@@ -321,6 +466,14 @@ void hold_remote_power_for_ms(
 )
 {
     if (duration_ms > 0) {
+        if (duration_ms > MAX_REMOTE_ANIMATION_MS) {
+            duration_ms = MAX_REMOTE_ANIMATION_MS;
+
+            printf(
+                "Animation watchdog limited runtime to one hour\n"
+            );
+        }
+
         remote_power_off_at =
             xTaskGetTickCount() + pdMS_TO_TICKS(duration_ms);
         gpio_set_level(NEOPIXEL_POWER_PIN, 1);
@@ -502,6 +655,30 @@ void flash_led_twice()
     }
 }
 
+void head_status_led_task(void *parameter)
+{
+    TickType_t next_heartbeat = 0;
+
+    while (1) {
+        if (head_wifi_connected) {
+            if (mesh_power_enabled) {
+                if ((int32_t)(xTaskGetTickCount() - next_heartbeat) >= 0) {
+                    gpio_set_level(LED_GPIO, 1);
+                    vTaskDelay(pdMS_TO_TICKS(120));
+                    gpio_set_level(LED_GPIO, 0);
+                    next_heartbeat = xTaskGetTickCount() + pdMS_TO_TICKS(2000);
+                }
+            } else {
+                gpio_set_level(LED_GPIO, 0);
+            }
+        } else {
+            gpio_set_level(LED_GPIO, 0);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
 
 // ============================================================
 // PRINT MAC
@@ -676,6 +853,27 @@ void send_to_device(
     }
 }
 
+esp_err_t ensure_broadcast_peer()
+{
+    if (esp_now_is_peer_exist(broadcast_mac)) {
+        return ESP_OK;
+    }
+
+    esp_now_peer_info_t peer = {};
+
+    memcpy(
+        peer.peer_addr,
+        broadcast_mac,
+        6
+    );
+
+    peer.channel = 0;
+    peer.ifidx = WIFI_IF_STA;
+    peer.encrypt = false;
+
+    return esp_now_add_peer(&peer);
+}
+
 
 // ============================================================
 // FORWARD MESSAGE TO NEIGHBORS
@@ -746,26 +944,7 @@ void send_broadcast(
     const MeshMessage *msg
 )
 {
-    uint8_t broadcast_mac[6] =
-        {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
-
-    if (!esp_now_is_peer_exist(
-            broadcast_mac)) {
-
-        esp_now_peer_info_t peer = {};
-
-        memcpy(
-            peer.peer_addr,
-            broadcast_mac,
-            6
-        );
-
-        peer.channel = 0;
-        peer.ifidx = WIFI_IF_STA;
-        peer.encrypt = false;
-
-        esp_now_add_peer(&peer);
-    }
+    ensure_broadcast_peer();
 
     esp_err_t result =
         esp_now_send(
@@ -830,29 +1009,7 @@ void send_join_beacon()
         network_channel;
 
 
-    uint8_t broadcast_mac[6] =
-        {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
-
-
-    if (!esp_now_is_peer_exist(
-            broadcast_mac)) {
-
-        esp_now_peer_info_t peer = {};
-
-        memcpy(
-            peer.peer_addr,
-            broadcast_mac,
-            6
-        );
-
-        peer.channel = 0;
-
-        peer.ifidx = WIFI_IF_STA;
-
-        peer.encrypt = false;
-
-        esp_now_add_peer(&peer);
-    }
+    ensure_broadcast_peer();
 
 
     esp_err_t result =
@@ -1448,11 +1605,6 @@ void on_data_recv(
     int len
 )
 {
-    printf(
-        "ESP-NOW RX CALLBACK FIRED, len=%d\n",
-        len
-    );
-
     if (len <= 0 ||
         len > 250) {
         return;
@@ -1898,6 +2050,11 @@ void process_mesh_message(
                 );
 
                 if (DEVICE_ID != HEAD_ID) {
+                    vTaskDelay(
+                        pdMS_TO_TICKS(
+                            DEVICE_ID * STATUS_RESPONSE_DELAY_MS
+                        )
+                    );
                     send_status_response();
                 }
 
@@ -1913,6 +2070,13 @@ void process_mesh_message(
                 );
 
                 if (DEVICE_ID == HEAD_ID) {
+                    if (
+                        diagnostic_pending &&
+                        msg->source_id < 32
+                    ) {
+                        diagnostic_response_mask |=
+                            1U << msg->source_id;
+                    }
                     queue_status_upload(msg);
                     print_mesh_rssi_map();
                 }
@@ -2092,6 +2256,8 @@ static void wifi_event_handler(
         event_id == IP_EVENT_STA_GOT_IP
     ) {
 
+        head_wifi_connected = true;
+
         ip_event_got_ip_t *event =
             (ip_event_got_ip_t *)event_data;
 
@@ -2105,6 +2271,8 @@ static void wifi_event_handler(
                 &event->ip_info.ip
             )
         );
+
+        flash_led_twice();
     }
 }
 
@@ -2201,9 +2369,6 @@ void initialize_head_wifi()
         "Connecting to WiFi: %s\n",
         WIFI_SSID
     );
-
-
-    esp_wifi_connect();
 
 
     // Give WiFi time to connect
@@ -2331,28 +2496,8 @@ void initialize_esp_now()
 
 
     // Broadcast peer
-    uint8_t broadcast_mac[6] =
-        {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
-
-
-    esp_now_peer_info_t peer = {};
-
-    memcpy(
-        peer.peer_addr,
-        broadcast_mac,
-        6
-    );
-
-    peer.channel = 0;
-
-    peer.ifidx =
-        WIFI_IF_STA;
-
-    peer.encrypt = false;
-
-
     esp_err_t result =
-        esp_now_add_peer(&peer);
+        ensure_broadcast_peer();
 
 
     if (
@@ -2498,6 +2643,22 @@ void head_beacon_task(
 )
 {
     while (1) {
+        if (
+            DEVICE_ID == HEAD_ID &&
+            diagnostic_pending &&
+            (int32_t)(
+                xTaskGetTickCount() - diagnostic_deadline
+            ) >= 0
+        ) {
+            if (
+                diagnostic_response_mask !=
+                diagnostic_expected_mask
+            ) {
+                queue_diagnostic_failure();
+            } else {
+                diagnostic_pending = false;
+            }
+        }
 
         if (
             DEVICE_ID == HEAD_ID
@@ -2507,7 +2668,23 @@ void head_beacon_task(
                 network_state ==
                 NETWORK_DISCOVERY
             ) {
-                send_join_beacon();
+                if (
+                    head_discovery_until != 0 &&
+                    (int32_t)(
+                        xTaskGetTickCount() -
+                        head_discovery_until
+                    ) >= 0
+                ) {
+                    network_state = NETWORK_READY;
+                    head_discovery_until = 0;
+                    printf(
+                        "HEAD mesh rediscovery complete\n"
+                    );
+                    print_neighbors();
+                    print_mesh_members();
+                } else {
+                    send_join_beacon();
+                }
             }
         }
 
@@ -2736,34 +2913,52 @@ bool set_time_from_created_at(
 // WRITE STATUS TO THINGSPEAK
 // ============================================================
 
-void write_status_to_thingspeak(
+bool write_status_to_thingspeak(
     const MeshMessage *msg
 )
 {
     char url[256];
     char mesh_summary[96];
+    char status_text[128];
 
     build_mesh_signal_summary(
         mesh_summary,
         sizeof(mesh_summary)
     );
 
+    if (msg->command == DIAGNOSTIC_FAILURE_COMMAND) {
+        snprintf(
+            status_text,
+            sizeof(status_text),
+            "diagnostic_failed_missing_mask_0x%lx_%.70s",
+            (unsigned long)msg->ack_message_id,
+            mesh_summary
+        );
+    } else {
+        snprintf(
+            status_text,
+            sizeof(status_text),
+            "device_%u_state_%u_battery_raw_%u_%.70s",
+            msg->source_id,
+            msg->command,
+            msg->battery_mv,
+            mesh_summary
+        );
+    }
+
     snprintf(
         url,
         sizeof(url),
         "https://api.thingspeak.com/update?"
         "api_key=%s&field%d=%d&field%d=%u&field5=%d&status="
-        "device_%u_state_%u_battery_raw_%u_%s",
+        "%s",
         STATUS_THINGSPEAK_API_KEY,
         STATUS_THINGSPEAK_DEVICE_FIELD,
         msg->source_id,
         STATUS_THINGSPEAK_BATTERY_FIELD,
         msg->battery_mv,
         msg->mesh_rssi_dbm,
-        msg->source_id,
-        msg->command,
-        msg->battery_mv,
-        mesh_summary
+        status_text
     );
 
     esp_http_client_config_t config = {};
@@ -2781,8 +2976,11 @@ void write_status_to_thingspeak(
         printf(
             "Could not initialize ThingSpeak status client\n"
         );
-        return;
+        return false;
     }
+
+    status_http_response_length = 0;
+    status_http_response[0] = '\0';
 
     esp_err_t err =
         esp_http_client_perform(client);
@@ -2793,22 +2991,33 @@ void write_status_to_thingspeak(
             esp_err_to_name(err)
         );
         esp_http_client_cleanup(client);
-        return;
+        return false;
     }
 
     int status =
         esp_http_client_get_status_code(client);
 
+    long entry_id =
+        strtol(status_http_response, NULL, 10);
+
+    bool accepted =
+        status >= 200 &&
+        status < 300 &&
+        entry_id > 0;
+
     printf(
         "ThingSpeak status write: channel=%d device=%d "
-        "state=%d HTTP=%d\n",
+        "state=%d HTTP=%d entry=%ld\n",
         STATUS_THINGSPEAK_CHANNEL_ID,
         msg->source_id,
         msg->command,
-        status
+        status,
+        entry_id
     );
 
     esp_http_client_cleanup(client);
+
+    return accepted;
 }
 
 void write_head_status_to_status_channel()
@@ -3052,17 +3261,6 @@ config.event_handler = thingspeak_http_event;
 config.crt_bundle_attach = esp_crt_bundle_attach;
 config.timeout_ms = 10000;
 
-    config.url = url;
-
-    config.method =
-        HTTP_METHOD_GET;
-
-    config.event_handler =
-        thingspeak_http_event;
-
-    config.timeout_ms =
-        10000;
-
 
     esp_http_client_handle_t client =
         esp_http_client_init(
@@ -3290,6 +3488,38 @@ config.timeout_ms = 10000;
         hold_power_for_ms(
             (uint32_t)data.timeOn * 1000U
         );
+
+        if (network_state == NETWORK_DISCOVERY) {
+            TickType_t mesh_ready_deadline =
+                xTaskGetTickCount() +
+                pdMS_TO_TICKS(
+                    HEAD_UPDATE_DISCOVERY_TIMEOUT_MS
+                );
+
+            printf(
+                "HEAD waiting for mesh discovery before sending update\n"
+            );
+
+            while (
+                network_state == NETWORK_DISCOVERY &&
+                (int32_t)(
+                    xTaskGetTickCount() - mesh_ready_deadline
+                ) < 0
+            ) {
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+
+            if (network_state == NETWORK_READY) {
+                printf(
+                    "HEAD mesh discovery finished before update\n"
+                );
+            } else {
+                printf(
+                    "HEAD mesh discovery timed out after %d ms; sending update anyway\n",
+                    HEAD_UPDATE_DISCOVERY_TIMEOUT_MS
+                );
+            }
+        }
     }
 
 
@@ -3320,9 +3550,16 @@ config.timeout_ms = 10000;
                 "Pattern 650: collecting mesh RSSI status\n"
             );
 
+            start_diagnostic_collection(BROADCAST_ID);
             queue_status_upload(&head_status);
-            send_status_request(BROADCAST_ID);
             hold_power_for_ms(STATUS_POWER_HOLD_MS);
+            vTaskDelay(pdMS_TO_TICKS(HEAD_POWER_SETTLE_DELAY_MS));
+            for (int attempt = 0; attempt < HEAD_DISCOVERY_RETRY_COUNT; ++attempt) {
+                if (attempt > 0) {
+                    vTaskDelay(pdMS_TO_TICKS(HEAD_DISCOVERY_RETRY_DELAY_MS));
+                }
+                send_status_request(BROADCAST_ID);
+            }
         } else if (target_device_id == HEAD_ID) {
             MeshMessage head_status = {};
             head_status.source_id = HEAD_ID;
@@ -3339,8 +3576,15 @@ config.timeout_ms = 10000;
 
             queue_status_upload(&head_status);
         } else if (target_device_id < NUM_DEVICES) {
-            send_status_request(target_device_id);
+            start_diagnostic_collection(target_device_id);
             hold_power_for_ms(STATUS_POWER_HOLD_MS);
+            vTaskDelay(pdMS_TO_TICKS(HEAD_POWER_SETTLE_DELAY_MS));
+            for (int attempt = 0; attempt < HEAD_DISCOVERY_RETRY_COUNT; ++attempt) {
+                if (attempt > 0) {
+                    vTaskDelay(pdMS_TO_TICKS(HEAD_DISCOVERY_RETRY_DELAY_MS));
+                }
+                send_status_request(target_device_id);
+            }
         } else {
             printf(
                 "Pattern %u does not select a remote device\n",
@@ -3542,7 +3786,7 @@ extern "C" void app_main(void)
 
         status_queue =
             xQueueCreate(
-                4,
+            STATUS_QUEUE_SIZE,
                 sizeof(MeshMessage)
             );
 
@@ -3594,6 +3838,19 @@ extern "C" void app_main(void)
 
         initialize_esp_now();
 
+        hold_power_for_ms(STATUS_POWER_HOLD_MS);
+
+        printf(
+            "HEAD startup: mesh power ON; waiting %lu ms for sleepy devices before first beacon\n",
+            (unsigned long)(HEAD_POWER_WAKE_DELAY_MS + HEAD_POWER_SETTLE_DELAY_MS)
+        );
+
+        vTaskDelay(
+            pdMS_TO_TICKS(
+                HEAD_POWER_WAKE_DELAY_MS + HEAD_POWER_SETTLE_DELAY_MS
+            )
+        );
+
         xTaskCreate(
             status_upload_task,
             "status_upload",
@@ -3621,6 +3878,14 @@ extern "C" void app_main(void)
             NULL
         );
 
+        xTaskCreate(
+            head_status_led_task,
+            "head_status_led",
+            2048,
+            NULL,
+            3,
+            NULL
+        );
 
         xTaskCreate(
             rx_processing_task,
@@ -3635,6 +3900,9 @@ extern "C" void app_main(void)
         network_state =
             NETWORK_DISCOVERY;
 
+        printf(
+            "HEAD startup: mesh power enabled before discovery\n"
+        );
 
     } else {
 
