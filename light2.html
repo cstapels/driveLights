@@ -12,251 +12,983 @@
 
         .slidecontainer {
             width: 95%;
-            /* Width of the outside container */
         }
-
-        /* The slider itself */
 
         .slider {
             -webkit-appearance: none;
-            /* Override default CSS styles */
             appearance: none;
             width: 100%;
-            /* Full-width */
             height: 25px;
-            /* Specified height */
             background: #d2d3d0;
-            /* Grey background */
-            //outline: none; /* Remove outline */
             opacity: 0.7;
-            /* Set transparency (for mouse-over effects on hover) */
             -webkit-transition: .2s;
-            /* 0.2 seconds transition on hover */
             transition: opacity .2s;
         }
 
-        /* Mouse-over effects */
-
         .slider:hover {
             opacity: 1;
-            /* Fully shown on mouse-over */
         }
-
-        /* The slider handle (use -webkit- (Chrome, Opera, Safari, Edge) and -moz- (Firefox) to override default look) */
 
         .slider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            /* Override default look */
             appearance: none;
             width: 25px;
-            /* Set a specific slider handle width */
             height: 25px;
-            /* Slider handle height */
             background: #04AA6D;
-            /* Green background */
             cursor: pointer;
-            /* Cursor on hover */
         }
 
         .slider::-moz-range-thumb {
             width: 25px;
-            /* Set a specific slider handle width */
             height: 25px;
-            /* Slider handle height */
             background: #04AA6D;
-            /* Green background */
             cursor: pointer;
-            /* Cursor on hover */
         }
 
+        /* ============================= */
+        /* COLOR PICKERS */
+        /* ============================= */
+
+        .colorPickers {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 30px;
+            align-items: flex-start;
         }
+
+        .colorPickerContainer {
+            text-align: center;
+        }
+
+        .colorValue {
+            margin-top: 8px;
+            font-family: monospace;
+            font-size: 16px;
+        }
+
+        /* ============================= */
+        /* DIAGNOSTICS */
+        /* ============================= */
+
+        .diagnostics {
+            margin-top: 30px;
+            padding: 15px;
+            border: 1px solid #aaa;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+        }
+
+        .diagnostics select {
+            font-size: 18px;
+            padding: 8px;
+            margin-right: 10px;
+        }
+
+        .diagnostics button {
+            font-size: 16px;
+            padding: 10px 18px;
+            height: 45px;
+        }
+
+        #diagnosticStatus {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
     </style>
 </head>
 
 <body>
+
+    <!-- IRO COLOR PICKER LIBRARY -->
+
     <script src="https://cdn.jsdelivr.net/npm/@jaames/iro@5"></script>
+
+
+    <!-- ============================= -->
+    <!-- COLOR PICKERS -->
+    <!-- ============================= -->
+
+    <div class="colorPickers">
+
+        <div class="colorPickerContainer">
+
+            <h3>Color 1</h3>
+
+            <div id="picker1"></div>
+
+            <div class="colorValue">
+                <span id="color1Value">0xFF0000</span>
+            </div>
+
+        </div>
+
+
+        <div class="colorPickerContainer">
+
+            <h3>Color 2</h3>
+
+            <div id="picker2"></div>
+
+            <div class="colorValue">
+                <span id="color2Value">0x0000FF</span>
+            </div>
+
+        </div>
+		        <div class="colorPickerContainer">
+
+            <h3>Color 3</h3>
+
+            <div id="picker3"></div>
+
+            <div class="colorValue">
+                <span id="color3Value">0x0000FF</span>
+            </div>
+
+        </div>
+
+    </div>
+
+
     <script>
-        var colorPicker = new iro.ColorPicker("#picker", {
-            // Set the size of the color picker
+
+        // =============================
+        // COLOR PICKER 1
+        // =============================
+
+        var colorPicker1 = new iro.ColorPicker("#picker1", {
             width: 220,
-            // Set the initial color to pure red
-            color: "#f00"
+            color: "#FF0000"
         });
+
+
+        // =============================
+        // COLOR PICKER 2
+        // =============================
+
+        var colorPicker2 = new iro.ColorPicker("#picker2", {
+            width: 220,
+            color: "#0000FF"
+        });
+
+        // =============================
+        // COLOR PICKER 3
+        // =============================
+
+        var colorPicker3 = new iro.ColorPicker("#picker3", {
+            width: 220,
+            color: "#0000FF"
+        });
+
+
+        // =============================
+        // PACK RGB INTO 32-BIT VALUE
+        // =============================
+        //
+        // R = bits 23-16
+        // G = bits 15-8
+        // B = bits 7-0
+        //
+        // Example:
+        //
+        // Red       = 0x00FF0000
+        // Green     = 0x0000FF00
+        // Blue      = 0x000000FF
+        // Purple    = 0x00FF00AA
+        //
+        // =============================
+
+        function packedRGB(rgb) {
+
+            return (
+                (rgb.r << 16) |
+                (rgb.g << 8) |
+                rgb.b
+            ) >>> 0;
+
+        }
+
+
+        // =============================
+        // PACKED RGB -> HEX STRING
+        // =============================
+
+        function packedRGBHex(rgb) {
+
+            return "0x" +
+                packedRGB(rgb)
+                    .toString(16)
+                    .padStart(6, "0")
+                    .toUpperCase();
+
+        }
+
+
+        // =============================
+        // UPDATE COLOR VALUES
+        // =============================
+
+        function updateColorValues() {
+
+            document.getElementById("color1Value").innerHTML =
+                packedRGBHex(colorPicker1.color.rgb);
+
+            document.getElementById("color2Value").innerHTML =
+                packedRGBHex(colorPicker2.color.rgb);
+				
+				            document.getElementById("color3Value").innerHTML =
+                packedRGBHex(colorPicker3.color.rgb);
+
+        }
+
+
+        colorPicker1.on("color:change", updateColorValues);
+
+        colorPicker2.on("color:change", updateColorValues);
+		
+        colorPicker3.on("color:change", updateColorValues);
+
+        updateColorValues();
+
     </script>
-    <div id="picker"></div>
-    <br>
+
+
+    <!-- ============================= -->
+    <!-- BRIGHTNESS -->
+    <!-- ============================= -->
+
     <div class="slidecontainer">
-        <h3>Brightness Value:
+
+        <h3>
+            Brightness Value:
             <span id="demo"></span>
         </h3>
-        <input type="range" min="0" max="100" value="50" class="slider" id="myRange">
+
+        <input type="range"
+               min="0"
+               max="100"
+               value="50"
+               class="slider"
+               id="myRange">
+
     </div>
+
+
+    <!-- ============================= -->
+    <!-- TIME ON -->
+    <!-- ============================= -->
+
     <div class="slidecontainer">
-        <h3>Time on:
+
+        <h3>
+            Time on:
             <span id="theTime"></span>
         </h3>
-        <input type="range" min="0" max="7200" value="600" class="slider" id="timeRange">
+
+        <input type="range"
+               min="0"
+               max="7200"
+               value="600"
+               class="slider"
+               id="timeRange">
+
     </div>
+
+
+    <!-- ============================= -->
+    <!-- EFFECT -->
+    <!-- ============================= -->
+
     <h3>Effect: </h3>
+
     <table>
+
         <tr width="100%">
-            <td width=300>
-                <input type="radio" id="solid" name="efx" value="0" checked=true>
+
+            <td width="200">
+
+                <input type="radio"
+                       id="solid"
+                       name="efx"
+                       value="0"
+                       checked>
+
                 <label for="solid">Solid</label>
                 <br>
-                <input type="radio" id="Fire" name="efx" value="1">
-                <label for="fire">Fire</label>
+
+
+                <input type="radio"
+                       id="Fire"
+                       name="efx"
+                       value="1">
+
+                <label for="Fire">Fire</label>
                 <br>
-                <input type="radio" id="fx2" name="efx" value="2">
-                <label for="Rainbow">Rainbow</label>
+
+
+                <input type="radio"
+                       id="fx2"
+                       name="efx"
+                       value="2">
+
+                <label for="fx2">Rainbow</label>
                 <br>
-                <input type="radio" id="fx3" name="efx" value="3">
-                <label for="rainbowWithGlitter">rainbowWithGlitter</label>
+
+
+                <input type="radio"
+                       id="fx3"
+                       name="efx"
+                       value="3">
+
+                <label for="fx3">rainbowWithGlitter</label>
                 <br>
-                <input type="radio" id="fx4" name="efx" value="4">
-                <label for="confetti">confetti</label>
+
+
+                <input type="radio"
+                       id="fx4"
+                       name="efx"
+                       value="4">
+
+                <label for="fx4">confetti</label>
                 <br>
-                <input type="radio" id="fx5" name="efx" value="5">
-                <label for="sinelon">sinelon</label>
+
+
+                <input type="radio"
+                       id="fx5"
+                       name="efx"
+                       value="5">
+
+                <label for="fx5">sinelon</label>
                 <br>
-                <input type="radio" id="fx6" name="efx" value="6">
-                <label for="juggle">bpm</label>
+
+
+                <input type="radio"
+                       id="fx6"
+                       name="efx"
+                       value="6">
+
+                <label for="fx6">bpm</label>
                 <br>
-                <input type="radio" id="fx7" name="efx" value="7">
-                <label for="bpm">juggle</label>
+
+
+                <input type="radio"
+                       id="fx7"
+                       name="efx"
+                       value="7">
+
+                <label for="fx7">juggle</label>
                 <br>
-                <input type="radio" id="fx8" name="efx" value="8">
-                <label for="fader">fader</label>
+
+
+                <input type="radio"
+                       id="fx8"
+                       name="efx"
+                       value="8">
+
+                <label for="fx8">fader</label>
                 <br>
+
             </td>
-            <td width=300 valign="top">
-                <input type="radio" id="fx9" name="efx" value="9">
-                <label for="7200">Flares</label>
+
+
+            <td width="200" valign="top">
+
+                <input type="radio"
+                       id="fx9"
+                       name="efx"
+                       value="9">
+
+                <label for="fx9">Flares</label>
                 <br>
-                <input type="radio" id="fx10" name="efx" value="10">
-                <label for="candycane">candy cane</label>
+
+
+                <input type="radio"
+                       id="fx10"
+                       name="efx"
+                       value="10">
+
+                <label for="fx10">candy cane</label>
                 <br>
-                <input type="radio" id="fx11" name="efx" value="11">
-                <label for="candycane3">candy cane wrg</label>
+
+
+                <input type="radio"
+                       id="fx11"
+                       name="efx"
+                       value="11">
+
+                <label for="fx11">candy cane wrg</label>
                 <br>
-                <input type="radio" id="fx12" name="efx" value="12">
-                <label for="delayFader">Delay Fader</label>
+
+
+                <input type="radio"
+                       id="fx12"
+                       name="efx"
+                       value="12">
+
+                <label for="fx12">Delay Fader</label>
                 <br>
-                <input type="radio" id="fx13" name="efx" value="13">
-                <label for="brightStep">Bright Step</label>
+
+
+                <input type="radio"
+                       id="fx13"
+                       name="efx"
+                       value="13">
+
+                <label for="fx13">Bright Step</label>
                 <br>
-                <input type="radio" id="fx14" name="efx" value="14">
-                <label for="candycane3">awesome1</label>
+
+
+                <input type="radio"
+                       id="fx14"
+                       name="efx"
+                       value="14">
+
+                <label for="fx14">Dual Fade</label>
                 <br>
-                <input type="radio" id="fx15" name="efx" value="15">
-                <label for="delayFader">Awesome2</label>
+
+
+                <input type="radio"
+                       id="fx15"
+                       name="efx"
+                       value="15">
+
+                <label for="fx15">Three Color Step</label>
                 <br>
-                <input type="radio" id="fx16" name="efx" value="16">
-                <label for="brightStep">Awesome3</label>
+
+
+                <input type="radio"
+                       id="fx16"
+                       name="efx"
+                       value="16">
+
+                <label for="fx16">Rain</label>
                 <br>
+
             </td>
-            <!--
-<td width=300><div><p>Time for on:</p><input type="radio" id="t0" name="onTime" value="0"><label for="0">0</label><br><input type="radio" id="t10" name="onTime" value="10"><label for="10">10</label><br><input type="radio" id="t60" name="onTime" value="60" checked=true><label for="60">60</label><br><input type="radio" id="t300" name="onTime" value="300"><label for="300">300</label><br><input type="radio" id="t600" name="onTime" value="600"><label for="600">600</label><br><input type="radio" id="t1000" name="onTime" value="1000"><label for="100">1000</label><br><input type="radio" id="t3600" name="onTime" value="3600"><label for="3600">3600</label><br><input type="radio" id="t37200" name="onTime" value="7200"><label for="7200">7200</label><br></div></td><td width=300><div><p>Sleep off time:</p><input type="radio" id="toff0" name="offTime" value="0" checked=true><label for="10">0</label><br><input type="radio" id="toff10" name="offTime" value="10" ><label for="60">10</label><br><input type="radio" id="toff300" name="offTime" value="300"><label for="300">300</label><br><input type="radio" id="toff600" name="offTime" value="600"><label for="600">600</label><br><input type="radio" id="toff1000" name="offTime" value="1000"><label for="100">1000</label><br><input type="radio" id="toff3600" name="offTime" value="3600"><label for="3600">3600</label><br><input type="radio" id="toff37200" name="offTime" value="7200"><label for="7200">7200</label><br></div></td>
--->
+<td width="200" valign="top">
+
+
+                <input type="radio"
+                       id="fx16"
+                       name="efx"
+                       value="16">
+
+                <label for="fx16">Center Glow</label>
+                <br>
+
+
+                <input type="radio"
+                       id="fx17"
+                       name="efx"
+                       value="17">
+
+                <label for="fx17">Ocean Swell</label>
+                <br>
+
+
+                <input type="radio"
+                       id="fx18"
+                       name="efx"
+                       value="18">
+
+                <label for="fx18">Color Drift</label>
+                <br>
+
+
+                <input type="radio"
+                       id="fx19"
+                       name="efx"
+                       value="19">
+
+                <label for="fx19">Northern Lights</label>
+                <br>
+				                <input type="radio"
+                       id="fx20"
+                       name="efx"
+                       value="20">
+
+                <label for="fx19">Ember Glow</label>
+                <br>
+</td>
+
         </tr>
+
     </table>
+
+
+    <!-- ============================= -->
+    <!-- EFFECT SPEED -->
+    <!-- ============================= -->
+
     <div class="slidecontainer">
-        <h3>Effect Speed:
+
+        <h3>
+            Effect Speed:
             <span id="fxSpeedLabel"></span>
         </h3>
-        <input type="range" min="1" max="100" value="50" class="slider" id="fxSpeed">
+
+
+        <input type="range"
+               min="1"
+               max="100"
+               value="50"
+               class="slider"
+               id="fxSpeed">
+
     </div>
-    <h5> Sumbittity do dah</h5>
-    <input type="submit" value="Set Lights" onclick="submit()" style="height:50px; width:150px" id="submitButton">
+
+
+    <h5>Sumbittity do dah</h5>
+
+
+    <input type="submit"
+           value="Set Lights"
+           onclick="submit()"
+           style="height:50px; width:150px"
+           id="submitButton">
+
+
+    <!-- ============================= -->
+    <!-- DIAGNOSTICS SECTION -->
+    <!-- ============================= -->
+
+    <div class="diagnostics">
+
+        <h3>Diagnostics</h3>
+
+
+        <label for="deviceNumber">
+            Device Number:
+        </label>
+
+
+        <select id="deviceNumber">
+			<option value="0">0</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+            <option value="11">11</option>
+            <option value="12">12</option>
+            <option value="13">13</option>
+            <option value="14">14</option>
+            <option value="50">50</option>
+
+        </select>
+
+
+        <button type="button"
+                onclick="sendDiagnostics()">
+
+            Send Diagnostics
+
+        </button>
+
+
+        <div id="diagnosticStatus"></div>
+
+    </div>
+
+
+    <!-- ============================= -->
+    <!-- MAIN JAVASCRIPT -->
+    <!-- ============================= -->
+
     <script type="text/javascript">
-        var slider = document.getElementById("myRange");
-        var output = document.getElementById("demo");
-
-        var timeOn = document.getElementById("timeRange");
-        var tOut = document.getElementById("theTime");
-
-        var lightSpeed = document.getElementById("fxSpeed");
-        var lsOut = document.getElementById("fxSpeedLabel");
 
 
-        output.innerHTML = slider.value; // Display the default slider value
-        tOut.innerHTML = timeOn.value; // Display the default slider value
-        lsOut.innerHTML = lightSpeed.value; // Display the default slider value
+        // =============================
+        // SLIDERS
+        // =============================
 
-        // Update the current slider value (each time you drag the slider handle)
+        var slider =
+            document.getElementById("myRange");
+
+        var output =
+            document.getElementById("demo");
+
+
+        var timeOn =
+            document.getElementById("timeRange");
+
+        var tOut =
+            document.getElementById("theTime");
+
+
+        var lightSpeed =
+            document.getElementById("fxSpeed");
+
+        var lsOut =
+            document.getElementById("fxSpeedLabel");
+
+
+        output.innerHTML =
+            slider.value;
+
+        tOut.innerHTML =
+            timeOn.value;
+
+        lsOut.innerHTML =
+            lightSpeed.value;
+
+
         slider.oninput = function () {
-            output.innerHTML = this.value;
-        }
-        timeOn.oninput = function () {
-            tOut.innerHTML = this.value;
-        }
-        lightSpeed.oninput = function () {
-            lsOut.innerHTML = this.value;
-        }
 
+            output.innerHTML =
+                this.value;
+
+        };
+
+
+        timeOn.oninput = function () {
+
+            tOut.innerHTML =
+                this.value;
+
+        };
+
+
+        lightSpeed.oninput = function () {
+
+            lsOut.innerHTML =
+                this.value;
+
+        };
+
+
+        // =============================
+        // NORMAL LIGHT SUBMIT
+        // =============================
 
         function submit() {
-            var xhr = new XMLHttpRequest();
-            var col1 = colorPicker.color.hexString; //document.getElementById("colHexNameB").value;
-       var myUrl = 'https://api.thingspeak.com/update?api_key=Y0A92ZT5UMPKK3N1&field1=';
-            var bright = document.getElementById("myRange").value;
-            var lightSpeed = document.getElementById("fxSpeed").value;
-            var myCols = colorPicker.color.rgb;
-            var myColsHex = colorPicker.color.hexString;
+
+            var xhr =
+                new XMLHttpRequest();
+
+
+            var myUrl =
+                'https://api.thingspeak.com/update?api_key=U0Q9H69T2119MWGV&field1=';
+
+
+            var bright =
+                document.getElementById("myRange").value;
+
+
+            var lightSpeed =
+                document.getElementById("fxSpeed").value;
+
+
+            // Get packed RGB values
+
+            var color1 =
+                packedRGB(colorPicker1.color.rgb);
+
+
+            var color2 =
+                packedRGB(colorPicker2.color.rgb);
+				
+            var color3 =
+                packedRGB(colorPicker3.color.rgb);
+
+
+            var color1Hex =
+                colorPicker1.color.hexString;
+
+
             var effectNum;
-            var myButton = document.getElementById("submitButton");
 
-            var fxRadios = document.getElementsByName("efx");
-            for (i = 0; i < fxRadios.length; i++) {
-                if (fxRadios[i].checked)
-                    effectNum = +fxRadios[i].value;
+
+            var myButton =
+                document.getElementById("submitButton");
+
+
+            var fxRadios =
+                document.getElementsByName("efx");
+
+
+            for (var i = 0;
+                 i < fxRadios.length;
+                 i++) {
+
+                if (fxRadios[i].checked) {
+
+                    effectNum =
+                        +fxRadios[i].value;
+
+                }
+
             }
-            var lightTime = timeOn.value;
 
-            myButton.style.backgroundColor = myColsHex; //'Red';
-			myButton.style.borderWidth= effectNum.toString() + "px";
-            //var timeRadios=	document.getElementsByName("onTime");	
-            //          for(i = 0; i < timeRadios.length; i++) {
-            //       if(timeRadios[i].checked)
-            //      lightTime = +timeRadios[i].value;
-            //   }
-            var sleepTime=0;
-            //var sleepRadios = document.getElementsByName("offTime");
-           // for (i = 0; i < sleepRadios.length; i++) {
-            //    if (sleepRadios[i].checked)
-           //         sleepTime = +sleepRadios[i].value;
-        //    }
 
-            myUrl += bright + "&field2=" + myCols.r + "&field3=" + myCols.g + "&field4=" + myCols.b + "&field5=" + effectNum + "&field6=" + lightTime + "&field7=" + sleepTime + "&field8=" + lightSpeed;
-            xhr.onreadystatechange = function () {
-    if (xhr.readyState === 4) {
-        console.log("Status:", xhr.status);
-        console.log("Response:", xhr.responseText);
-    }
-};
+            var lightTime =
+                timeOn.value;
 
-xhr.open('GET', myUrl, true);
-xhr.send();
+
+            // Make button Color 1
+
+            myButton.style.backgroundColor =
+                color1Hex;
+
+
+            myButton.style.borderWidth =
+                effectNum.toString() + "px";
+
+
+            var sleepTime = 0;
+
+
+            // =============================
+            // THINGSPEAK FIELDS
+            // =============================
+            //
+            // field1 = brightness
+            // field2 = packed Color 1
+            // field3 = packed Color 2
+            // field4 = packed color 3
+            // field5 = effect
+            // field6 = time on
+            // field7 = sleep time
+            // field8 = effect speed
+            //
+            // =============================
+
+            myUrl +=
+                bright +
+                "&field2=" + color1 +
+                "&field3=" + color2 +
+				"&field4=" + color3 +
+                "&field5=" + effectNum +
+                "&field6=" + lightTime +
+                "&field7=" + sleepTime +
+                "&field8=" + lightSpeed;
+
+
+            console.log(
+                "Color 1:",
+                packedRGBHex(colorPicker1.color.rgb),
+                color1
+            );
+
+
+            console.log(
+                "Color 2:",
+                packedRGBHex(colorPicker2.color.rgb),
+                color2
+            );
+			
+            console.log(
+                "Color 3:",
+                packedRGBHex(colorPicker3.color.rgb),
+                color3
+            );	
+
+
+            console.log(
+                "ThingSpeak URL:",
+                myUrl
+            );
+
+
+            xhr.onreadystatechange =
+                function () {
+
+                    if (xhr.readyState === 4) {
+
+                        console.log(
+                            "Status:",
+                            xhr.status
+                        );
+
+                        console.log(
+                            "Response:",
+                            xhr.responseText
+                        );
+
+                    }
+
+                };
+
+
+            xhr.open(
+                'GET',
+                myUrl,
+                true
+            );
+
+
+            xhr.send();
+
+
             updateMessage();
 
         }
 
-        function updateMessage() {
-            //var refreshMessage = document.getElementById("refreshNotification");
-            var myButton = document.getElementById("submitButton");
-            //refreshMessage.innerHTML = "UPDATING";
-            // refreshMessage.style.color = "red";
-            myButton.style.backgroundColor = 'White';
 
-            setTimeout(function () {
-                updateRefresh();
-            }, 500);
+        // =============================
+        // DIAGNOSTICS
+        // =============================
+
+        function sendDiagnostics() {
+
+            var xhr =
+                new XMLHttpRequest();
+
+
+            var deviceNumber =
+                parseInt(
+                    document
+                        .getElementById("deviceNumber")
+                        .value
+                );
+
+
+            // Device 1 -> 601
+            // Device 2 -> 602
+            // ...
+            // Device 15 -> 615
+
+            var pattern =
+                deviceNumber + 600;
+
+
+            var myUrl =
+                'https://api.thingspeak.com/update?api_key=U0Q9H69T2119MWGV&field1=1&field5='
+                + pattern;
+
+
+            var status =
+                document.getElementById(
+                    "diagnosticStatus"
+                );
+
+
+            status.innerHTML =
+                "Sending pattern " +
+                pattern +
+                "...";
+
+
+            console.log(
+                "Diagnostic device:",
+                deviceNumber
+            );
+
+
+            console.log(
+                "Diagnostic pattern:",
+                pattern
+            );
+
+
+            console.log(
+                "URL:",
+                myUrl
+            );
+
+
+            xhr.onreadystatechange =
+                function () {
+
+                    if (xhr.readyState === 4) {
+
+                        console.log(
+                            "Diagnostics Status:",
+                            xhr.status
+                        );
+
+
+                        console.log(
+                            "Diagnostics Response:",
+                            xhr.responseText
+                        );
+
+
+                        if (xhr.status === 200) {
+
+                            status.innerHTML =
+                                "Sent pattern " +
+                                pattern +
+                                " to ThingSpeak.";
+
+                        }
+
+                        else {
+
+                            status.innerHTML =
+                                "Error sending diagnostics (" +
+                                xhr.status +
+                                ")";
+
+                        }
+
+                    }
+
+                };
+
+
+            xhr.open(
+                'GET',
+                myUrl,
+                true
+            );
+
+
+            xhr.send();
+
         }
+
+
+        // =============================
+        // BUTTON UPDATE
+        // =============================
+
+        function updateMessage() {
+
+            var myButton =
+                document.getElementById(
+                    "submitButton"
+                );
+
+
+            myButton.style.backgroundColor =
+                'White';
+
+
+            setTimeout(
+                function () {
+
+                    updateRefresh();
+
+                },
+                500
+            );
+
+        }
+
 
         function updateRefresh() {
-            var myButton = document.getElementById("submitButton");
-            var myColsHex = colorPicker.color.hexString;
-            myButton.style.backgroundColor = myColsHex;
+
+            var myButton =
+                document.getElementById(
+                    "submitButton"
+                );
+
+
+            myButton.style.backgroundColor =
+                colorPicker1.color.hexString;
+
         }
+
     </script>
+
 </body>
+
+</html>
+
