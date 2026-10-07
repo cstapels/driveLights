@@ -637,9 +637,9 @@ void send_update_ack(
 // LED
 // ============================================================
 
-void flash_led_twice()
+void flash_led_on_connect()
 {
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 3; i++) {
 
         gpio_set_level(LED_GPIO, 1);
 
@@ -1591,6 +1591,61 @@ void print_mesh_rssi_map()
 
 
 // ============================================================
+// BUILD FULL MESH MAP SUMMARY (for ThingSpeak status upload)
+// ============================================================
+//
+// Same per-device breakdown as print_mesh_rssi_map(), but written
+// into a buffer instead of printf'd, for publishing on demand.
+// ============================================================
+
+void build_full_mesh_map_summary(
+    char *buffer,
+    size_t buffer_size
+)
+{
+    size_t used = 0;
+    TickType_t now = xTaskGetTickCount();
+
+    used += snprintf(
+        buffer + used,
+        buffer_size - used,
+        "meshmap"
+    );
+
+    for (int i = 0; i < NUM_DEVICES; i++) {
+        if (i == HEAD_ID || used >= buffer_size) {
+            continue;
+        }
+
+        if (!known_devices[i].known) {
+            used += snprintf(buffer + used, buffer_size - used, "_d%d_unk", i);
+            continue;
+        }
+
+        if (!neighbor_signals[i].known) {
+            used += snprintf(buffer + used, buffer_size - used, "_d%d_norssi", i);
+            continue;
+        }
+
+        TickType_t age = now - neighbor_signals[i].last_seen;
+
+        if (age > pdMS_TO_TICKS(MESH_SIGNAL_MAX_AGE_MS)) {
+            used += snprintf(buffer + used, buffer_size - used, "_d%d_stale", i);
+            continue;
+        }
+
+        used += snprintf(
+            buffer + used,
+            buffer_size - used,
+            "_d%d_%d",
+            i,
+            neighbor_signals[i].rssi_dbm
+        );
+    }
+}
+
+
+// ============================================================
 // RECEIVE CALLBACK
 // ============================================================
 //
@@ -2272,7 +2327,7 @@ static void wifi_event_handler(
             )
         );
 
-        flash_led_twice();
+        flash_led_on_connect();
     }
 }
 
@@ -2934,6 +2989,11 @@ bool write_status_to_thingspeak(
             (unsigned long)msg->ack_message_id,
             mesh_summary
         );
+    } else if (msg->command == MESH_MAP_COMMAND) {
+        build_full_mesh_map_summary(
+            status_text,
+            sizeof(status_text)
+        );
     } else {
         snprintf(
             status_text,
@@ -3560,6 +3620,21 @@ config.timeout_ms = 10000;
                 }
                 send_status_request(BROADCAST_ID);
             }
+        } else if (data.pattern == 651) {
+            MeshMessage mesh_map_status = {};
+            mesh_map_status.source_id = HEAD_ID;
+            mesh_map_status.target_id = HEAD_ID;
+            mesh_map_status.type = MSG_STATUS_RESPONSE;
+            mesh_map_status.command = MESH_MAP_COMMAND;
+            mesh_map_status.battery_mv = read_battery_level();
+            mesh_map_status.mesh_rssi_dbm =
+                strongest_recent_mesh_rssi();
+
+            printf(
+                "Pattern 651: publishing current mesh RSSI map to status\n"
+            );
+
+            queue_status_upload(&mesh_map_status);
         } else if (target_device_id == HEAD_ID) {
             MeshMessage head_status = {};
             head_status.source_id = HEAD_ID;

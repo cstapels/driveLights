@@ -11,7 +11,7 @@ namespace {
 constexpr const char* kTag = "LED_STRIP";
 constexpr gpio_num_t kLedDataPin = GPIO_NUM_4;
 constexpr gpio_num_t kLedPowerPin = GPIO_NUM_27;
-constexpr uint8_t kBrightness = 128;
+constexpr uint8_t kBrightness = 78;
 constexpr TickType_t kColorTime = pdMS_TO_TICKS(5000);
 constexpr TickType_t kOffTime = pdMS_TO_TICKS(5000);
 constexpr int kLedCount = 150;

@@ -55,7 +55,7 @@ typedef enum {
 } RainDirection;
 
 #define MAX_RAIN_DROPS 10
-#define TOTAL_RAIN_DROPS_PER_DIR 10
+#define TOTAL_RAIN_DROPS_PER_DIR 20 // twice as long before switching direction
 
 typedef struct {
     bool active;
@@ -64,15 +64,46 @@ typedef struct {
 } RainDrop;
 
 static bool rain_initialized = false;
-static RainDirection rain_direction = RAIN_DIR_DOWN;
+static RainDirection rain_direction = RAIN_DIR_UP;
 static RainDrop rain_drops[MAX_RAIN_DROPS];
 static int rain_drops_spawned = 0;
 static int rain_drops_landed = 0;
 static int rain_pile_height = 0;
 static int rain_spawn_timer = 0;
-static int rain_frame_counter = 0;
-static const int RAIN_FRAMES_PER_STEP = 2; // lower = faster fall
-static const int RAIN_SPAWN_INTERVAL = 14; // steps between drop spawns
+static float rain_frame_accum = 0.0F;
+// Base advance-per-frame; original was 1/2 = 0.5, this is 25% faster.
+static const float RAIN_BASE_SPEED_PER_FRAME = 0.625F;
+static const int RAIN_SPAWN_INTERVAL_BASE = 14; // base steps between drop spawns
+// Per-device values below are randomized once at startup, seeded by DEVICE_ID,
+// so each device falls at a slightly different speed with different drop spacing.
+static uint32_t rain_rng_state = 0;
+static float rain_speed_per_frame = RAIN_BASE_SPEED_PER_FRAME;
+static int rain_spawn_interval = RAIN_SPAWN_INTERVAL_BASE;
+static bool rain_device_seeded = false;
+
+static uint32_t rain_rand_next()
+{
+    // xorshift32
+    rain_rng_state ^= rain_rng_state << 13;
+    rain_rng_state ^= rain_rng_state >> 17;
+    rain_rng_state ^= rain_rng_state << 5;
+    return rain_rng_state;
+}
+
+static void rain_seed_device_variance()
+{
+    rain_rng_state = (uint32_t)(DEVICE_ID * 2654435761U) + 1U;
+
+    // +/-15% speed variance around the base speed
+    float speed_variance = ((float)(rain_rand_next() % 31) - 15.0F) / 100.0F;
+    rain_speed_per_frame = RAIN_BASE_SPEED_PER_FRAME * (1.0F + speed_variance);
+
+    // +/-4 step variance around the base spawn interval (spacing between drops)
+    int spacing_variance = (int)(rain_rand_next() % 9) - 4;
+    rain_spawn_interval = RAIN_SPAWN_INTERVAL_BASE + spacing_variance;
+
+    rain_device_seeded = true;
+}
 //three color  fade
 typedef enum {
     FADE_TO_COLOR,
@@ -129,7 +160,8 @@ void reset_effects()
     rain_drops_landed = 0;
     rain_pile_height = 0;
     rain_spawn_timer = 0;
-    rain_frame_counter = 0;
+    rain_frame_accum = 0.0F;
+    rain_device_seeded = false;
     fade_initialized = false;
 }
 
@@ -1034,8 +1066,8 @@ static void rain_reset_dir() {
     rain_drops_spawned = 0;
     rain_drops_landed = 0;
     rain_pile_height = 0;
-    rain_spawn_timer = RAIN_SPAWN_INTERVAL; // spawn first drop immediately
-    rain_frame_counter = 0;
+    rain_spawn_timer = rain_spawn_interval; // spawn first drop immediately
+    rain_frame_accum = 0.0F;
 }
 
 void three_color_effect_step(const ThingSpeakData *data) {
@@ -1105,17 +1137,20 @@ void rain_effect_step(const ThingSpeakData *data) {
     }
 
     if (!rain_initialized) {
-        rain_direction = RAIN_DIR_DOWN;
+        rain_direction = RAIN_DIR_UP;
+        if (!rain_device_seeded) {
+            rain_seed_device_variance();
+        }
         rain_reset_dir();
         rain_initialized = true;
     }
 
-    // Throttle fall speed
-    rain_frame_counter++;
-    if (rain_frame_counter < RAIN_FRAMES_PER_STEP) {
+    // Throttle fall speed (fractional, so per-device speed variance is possible)
+    rain_frame_accum += rain_speed_per_frame;
+    if (rain_frame_accum < 1.0F) {
         return;
     }
-    rain_frame_counter = 0;
+    rain_frame_accum -= 1.0F;
 
     // Clear strip
     ESP_ERROR_CHECK(led_strip_clear(neopixel_strip));
@@ -1144,7 +1179,7 @@ void rain_effect_step(const ThingSpeakData *data) {
     // Spawn new drops up to TOTAL_RAIN_DROPS_PER_DIR (10)
     if (rain_drops_spawned < TOTAL_RAIN_DROPS_PER_DIR) {
         rain_spawn_timer++;
-        if (rain_spawn_timer >= RAIN_SPAWN_INTERVAL) {
+        if (rain_spawn_timer >= rain_spawn_interval) {
             for (int d = 0; d < MAX_RAIN_DROPS; d++) {
                 if (!rain_drops[d].active) {
                     rain_drops[d].active = true;

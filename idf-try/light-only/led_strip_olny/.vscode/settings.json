@@ -33,5 +33,6 @@
     "--query-driver=**",
     "--compile-commands-dir=c:\\git\\personal\\driveLights\\idf-try\\light-only\\led_strip_olny\\build"
   ],
-  "idf.flashType": "UART"
+  "idf.flashType": "UART",
+  "idf.port": "COM11"
 }
