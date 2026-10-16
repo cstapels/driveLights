@@ -34,5 +34,5 @@
     "--compile-commands-dir=c:\\git\\personal\\driveLights\\idf-try\\network_test\\next_level\\build"
   ],
   "idf.flashType": "UART",
-  "idf.port": "COM11"
+  "idf.port": "COM4"
 }
