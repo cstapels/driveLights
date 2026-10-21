@@ -17,7 +17,7 @@
 // Head device = 0
 // Other devices = 1, 2, 3, etc.
 //
-#define DEVICE_ID 2   //0 is com 13 now says 3 on it
+#define DEVICE_ID 10   //0 is com 13 now says 3 on it
 //1 is com9 swirly
 //4 device 2 on com 12
 //6? is device 3 on com11
@@ -75,6 +75,7 @@
 #define HEAD_STATUS_INTERVAL_MS 3600000
 #define MESH_SIGNAL_MAX_AGE_MS 30000
 #define MAX_REMOTE_ANIMATION_MS (60UL * 60UL * 1000UL)
+#define DIAGNOSTIC_RESPONSE_TIMEOUT_MS 12000
 #define DIAGNOSTIC_FAILURE_COMMAND 255
 #define MESH_MAP_COMMAND 254
 #define HEAD_POWER_WAKE_DELAY_MS 400

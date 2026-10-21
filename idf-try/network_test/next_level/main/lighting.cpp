@@ -201,17 +201,26 @@ void led_update_task(void *parameter)
                 speed = 100;
             }
 
-            uint32_t frame_delay_ms;
-            if (
+            // Signed math: the old unsigned subtraction wrapped for speed > 85,
+            // producing a multi-day delay that froze the effect.
+            int32_t frame_delay_ms;
+            if (current_data.pattern == 9) {
+                // Flare advances a fixed physics step per frame, so it needs short frames.
+                frame_delay_ms = 50 - ((int32_t)speed * 2) / 5;
+            } else if (
                 current_data.pattern == 10 ||
                 current_data.pattern == 11 ||
                 current_data.pattern == 15 ||
                 current_data.pattern == 16 ||
                 current_data.pattern >= 17
             ) {
-                frame_delay_ms = 240U - (speed * 2U);
+                frame_delay_ms = 240 - ((int32_t)speed * 2);
             } else {
-                frame_delay_ms = 240U - ((speed * 14U) / 5U);
+                frame_delay_ms = 240 - (((int32_t)speed * 14) / 5);
+            }
+
+            if (frame_delay_ms < 10) {
+                frame_delay_ms = 10;
             }
 
             wait_ticks = pdMS_TO_TICKS(frame_delay_ms);

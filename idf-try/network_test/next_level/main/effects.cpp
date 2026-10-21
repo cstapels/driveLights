@@ -71,8 +71,8 @@ static int rain_drops_landed = 0;
 static int rain_pile_height = 0;
 static int rain_spawn_timer = 0;
 static float rain_frame_accum = 0.0F;
-// Base advance-per-frame; original was 1/2 = 0.5, this is 25% faster.
-static const float RAIN_BASE_SPEED_PER_FRAME = 0.625F;
+// Base advance-per-frame; original was 1/2 = 0.5, this is 40% faster.
+static const float RAIN_BASE_SPEED_PER_FRAME = 0.7F;
 static const int RAIN_SPAWN_INTERVAL_BASE = 14; // base steps between drop spawns
 // Per-device values below are randomized once at startup, seeded by DEVICE_ID,
 // so each device falls at a slightly different speed with different drop spacing.

@@ -345,11 +345,14 @@ void start_diagnostic_collection(
 
     if (target_device_id == BROADCAST_ID) {
         for (int i = 0; i < NUM_DEVICES; i++) {
-            diagnostic_expected_mask |= 1U << i;
+            if (i != HEAD_ID) {
+                diagnostic_expected_mask |= 1U << i;
+            }
         }
     } else if (
         target_device_id >= 0 &&
-        target_device_id < 32
+        target_device_id < NUM_DEVICES &&
+        target_device_id != HEAD_ID
     ) {
         diagnostic_expected_mask = 1U << target_device_id;
     }
@@ -358,7 +361,7 @@ void start_diagnostic_collection(
     diagnostic_pending = true;
     diagnostic_deadline =
         xTaskGetTickCount() +
-        pdMS_TO_TICKS(REMOTE_DISCOVERY_DURATION_MS);
+        pdMS_TO_TICKS(DIAGNOSTIC_RESPONSE_TIMEOUT_MS);
 }
 
 void queue_diagnostic_failure()
@@ -652,6 +655,16 @@ void flash_led_on_connect()
         vTaskDelay(
             pdMS_TO_TICKS(100)
         );
+    }
+}
+
+void flash_startup_led()
+{
+    for (int i = 0; i < 2; ++i) {
+        gpio_set_level(LED_GPIO, 1);
+        vTaskDelay(pdMS_TO_TICKS(150));
+        gpio_set_level(LED_GPIO, 0);
+        vTaskDelay(pdMS_TO_TICKS(150));
     }
 }
 
@@ -2130,7 +2143,8 @@ void process_mesh_message(
                         msg->source_id < 32
                     ) {
                         diagnostic_response_mask |=
-                            1U << msg->source_id;
+                            (1U << msg->source_id) &
+                            diagnostic_expected_mask;
                     }
                     queue_status_upload(msg);
                     print_mesh_rssi_map();
@@ -3989,6 +4003,7 @@ extern "C" void app_main(void)
             "Starting as REMOTE\n"
         );
 
+        flash_startup_led();
 
         network_state =
             NETWORK_CHANNEL_DISCOVERY;
